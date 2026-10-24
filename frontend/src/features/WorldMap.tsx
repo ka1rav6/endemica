@@ -15,32 +15,38 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 setWorkerUrl(maplibreWorkerUrl);
 import type { Feature, FeatureCollection, LineString, Point as GeoPoint } from 'geojson';
 import type { Country, OriginContribution, Route } from '@/types/api';
+import type { MapSpreadEntry } from '@/lib/spread';
 import { greatCircleLine } from '@/lib/geo';
-import { formatPassengers } from '@/lib/format';
+import { formatCount, formatPassengers } from '@/lib/format';
 
 const API_BOUNDARIES_URL = '/data/country_boundaries.geojson';
 const BUNDLED_BOUNDARIES_URL = '/boundaries/countries.geojson';
 
-const COLOURS = {
-  land: '#8ea4b8',
-  landOrigin: '#38bdf8',
-  landOutbreak: '#fb7185',
-  landSelected: '#14b8a6',
-  outline: '#4d6478',
-  outlineHover: '#f8fafc',
-  outlineSelected: '#ccfbf1',
-  arcObserved: '#2dd4bf',
-  arcEstimated: '#7dd3fc',
-  water: '#07131c',
-  graticule: '#1a3d56',
+const C = {
+  water: '#060910',
+  graticule: '#15202c',
+  land: '#1e2a36',
+  landQuiet: '#263442',
+  outline: '#2f3f4f',
+  outlineHover: '#dbe6f0',
+  selected: '#2ee6c0',
+  /** Earliest to latest arrival. Reads as a time ramp, not a severity ramp. */
+  ramp: ['#ff6b7a', '#ff9f6b', '#ffd166', '#8fd98a', '#58a6ff', '#9f86ff'],
+  arcObserved: '#2ee6c0',
+  arcEstimated: '#58a6ff',
 } as const;
 
 interface Props {
   countries: Country[];
   selectedIso3: string | null;
-  onSelect: (iso3: string) => void;
+  comparisonIso3: string | null;
+  onSelect: (iso3: string, additive: boolean) => void;
+  spread: MapSpreadEntry[];
+  diseaseName: string | null;
+  yearCeiling: number | null;
   origins: OriginContribution[];
   routes: Route[];
+  showFlows: boolean;
 }
 
 interface BoundaryCollection {
@@ -51,11 +57,6 @@ interface BoundaryCollection {
     properties: Record<string, unknown>;
     geometry: unknown;
   }[];
-}
-
-interface HoveredCountry {
-  iso3: string;
-  name: string;
 }
 
 function arcFeatures(
@@ -74,14 +75,12 @@ function arcFeatures(
     features.push({
       type: 'Feature',
       properties: {
-        origin: route.origin_iso3,
         originName: route.origin_name,
-        dest: route.dest_iso3,
         destName: route.dest_name,
         passengers: route.passengers_per_day,
         valueType: route.value_type,
         source: route.source,
-        width: 1.2 + share * 4.5,
+        width: 1.1 + share * 4.2,
       },
       geometry: {
         type: 'LineString',
@@ -89,39 +88,56 @@ function arcFeatures(
       },
     });
   }
-
   return { type: 'FeatureCollection', features };
 }
 
-function pointFeatures(
+function markerFeatures(
   countries: Country[],
-  include: (country: Country) => boolean,
+  entries: MapSpreadEntry[],
+  limit: number,
 ): FeatureCollection<GeoPoint> {
+  const byIso3 = new Map(countries.map((country) => [country.iso3, country]));
   const features: Feature<GeoPoint>[] = [];
-  for (const country of countries) {
-    const { centroid_lat: lat, centroid_lon: lon } = country;
-    if (!include(country) || lat === null || lon === null) continue;
+  for (const entry of entries.slice(0, limit)) {
+    const country = byIso3.get(entry.iso3);
+    if (!country || country.centroid_lat === null || country.centroid_lon === null) continue;
     features.push({
       type: 'Feature',
-      properties: { iso3: country.iso3, name: country.name },
-      geometry: { type: 'Point', coordinates: [lon, lat] },
+      properties: { label: String(entry.arrivalOrder), iso3: entry.iso3 },
+      geometry: { type: 'Point', coordinates: [country.centroid_lon, country.centroid_lat] },
     });
   }
   return { type: 'FeatureCollection', features };
 }
 
+function pointFor(country: Country | undefined): FeatureCollection<GeoPoint> {
+  if (!country || country.centroid_lat === null || country.centroid_lon === null) {
+    return { type: 'FeatureCollection', features: [] };
+  }
+  return {
+    type: 'FeatureCollection',
+    features: [
+      {
+        type: 'Feature',
+        properties: { iso3: country.iso3 },
+        geometry: { type: 'Point', coordinates: [country.centroid_lon, country.centroid_lat] },
+      },
+    ],
+  };
+}
+
 function graticule(): FeatureCollection<LineString> {
   const features: Feature<LineString>[] = [];
-  for (let lon = -180; lon <= 180; lon += 30) {
+  for (let lon = -180; lon <= 180; lon += 20) {
     const coordinates: [number, number][] = [];
-    for (let lat = -80; lat <= 80; lat += 8) coordinates.push([lon, lat]);
+    for (let lat = -84; lat <= 84; lat += 6) coordinates.push([lon, lat]);
     features.push({
       type: 'Feature',
       properties: {},
       geometry: { type: 'LineString', coordinates },
     });
   }
-  for (let lat = -60; lat <= 60; lat += 30) {
+  for (let lat = -60; lat <= 60; lat += 20) {
     features.push({
       type: 'Feature',
       properties: {},
@@ -129,6 +145,7 @@ function graticule(): FeatureCollection<LineString> {
         type: 'LineString',
         coordinates: [
           [-180, lat],
+          [0, lat],
           [180, lat],
         ],
       },
@@ -139,13 +156,13 @@ function graticule(): FeatureCollection<LineString> {
 
 async function loadBoundaries(): Promise<BoundaryCollection> {
   try {
-    const response = await fetch(API_BOUNDARIES_URL, { signal: AbortSignal.timeout(4000) });
+    const response = await fetch(API_BOUNDARIES_URL, { signal: AbortSignal.timeout(5000) });
     if (response.ok) {
       const data = (await response.json()) as BoundaryCollection;
       if (Array.isArray(data.features) && data.features.length > 0) return data;
     }
   } catch {
-    // Processed boundaries are optional. The bundled Natural Earth layer still draws.
+    // Processed boundaries are optional; the bundled Natural Earth layer still draws.
   }
   const response = await fetch(BUNDLED_BOUNDARIES_URL);
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -156,41 +173,83 @@ async function loadBoundaries(): Promise<BoundaryCollection> {
   return data;
 }
 
+function node(tag: string, text: string, style?: Partial<CSSStyleDeclaration>): HTMLElement {
+  const element = document.createElement(tag);
+  element.textContent = text;
+  if (style) Object.assign(element.style, style);
+  return element;
+}
+
 function routePopup(properties: Record<string, unknown>): HTMLElement {
   const root = document.createElement('div');
-  const title = document.createElement('strong');
-  title.textContent = `${String(properties['originName'])} → ${String(properties['destName'])}`;
-  const volume = document.createElement('div');
-  volume.textContent = `${formatPassengers(Number(properties['passengers']))} · ${String(properties['valueType'])}`;
-  const source = document.createElement('div');
-  source.style.color = '#8aa0b5';
-  source.textContent = `source: ${String(properties['source'])}`;
-  root.append(title, volume, source);
+  root.append(
+    node('strong', `${String(properties['originName'])} → ${String(properties['destName'])}`),
+    node(
+      'div',
+      `${formatPassengers(Number(properties['passengers']))} · ${String(properties['valueType'])}`,
+    ),
+    node('div', `source: ${String(properties['source'])}`, {
+      color: '#74889e',
+      fontSize: '10.5px',
+    }),
+  );
   return root;
 }
 
-const arcColour: ExpressionSpecification = [
-  'match',
-  ['get', 'valueType'],
-  'observed',
-  COLOURS.arcObserved,
-  COLOURS.arcEstimated,
+const fillColour: ExpressionSpecification = [
+  'case',
+  ['boolean', ['feature-state', 'selected'], false],
+  C.selected,
+  ['boolean', ['feature-state', 'affected'], false],
+  [
+    'interpolate',
+    ['linear'],
+    ['coalesce', ['feature-state', 'order'], 0],
+    0,
+    C.ramp[0],
+    0.2,
+    C.ramp[1],
+    0.4,
+    C.ramp[2],
+    0.6,
+    C.ramp[3],
+    0.8,
+    C.ramp[4],
+    1,
+    C.ramp[5],
+  ],
+  ['boolean', ['feature-state', 'hasAnyReport'], false],
+  C.landQuiet,
+  C.land,
 ];
 
-export function WorldMap({ countries, selectedIso3, onSelect, origins, routes }: Props) {
+export function WorldMap({
+  countries,
+  selectedIso3,
+  comparisonIso3,
+  onSelect,
+  spread,
+  diseaseName,
+  yearCeiling,
+  origins,
+  routes,
+  showFlows,
+}: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const flewTo = useRef<string | null>(null);
   const [ready, setReady] = useState(false);
   const [boundaryError, setBoundaryError] = useState<string | null>(null);
-  const [hover, setHover] = useState<HoveredCountry | null>(null);
   const selectRef = useRef(onSelect);
   selectRef.current = onSelect;
 
-  const selected = useMemo(
-    () => countries.find((country) => country.iso3 === selectedIso3) ?? null,
-    [countries, selectedIso3],
-  );
+  const byIso3 = useMemo(() => new Map(countries.map((c) => [c.iso3, c])), [countries]);
+  const spreadByIso3 = useMemo(() => new Map(spread.map((e) => [e.iso3, e])), [spread]);
+  const selected = selectedIso3 ? byIso3.get(selectedIso3) : undefined;
+  const spreadRef = useRef(spreadByIso3);
+  spreadRef.current = spreadByIso3;
+  const diseaseRef = useRef(diseaseName);
+  diseaseRef.current = diseaseName;
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -202,13 +261,11 @@ export function WorldMap({ countries, selectedIso3, onSelect, origins, routes }:
       style: {
         version: 8,
         sources: {},
-        layers: [
-          { id: 'background', type: 'background', paint: { 'background-color': COLOURS.water } },
-        ],
+        layers: [{ id: 'bg', type: 'background', paint: { 'background-color': C.water } }],
       },
-      center: [18, 16],
-      zoom: 1.35,
-      minZoom: 0.8,
+      center: [12, 22],
+      zoom: 1.5,
+      minZoom: 0.9,
       maxZoom: 7,
       attributionControl: false,
       renderWorldCopies: true,
@@ -224,7 +281,8 @@ export function WorldMap({ countries, selectedIso3, onSelect, origins, routes }:
     map.addControl(
       new AttributionControl({
         compact: true,
-        customAttribution: 'Boundaries © Natural Earth. Arcs are great circles between centroids.',
+        customAttribution:
+          'Boundaries © Natural Earth · Reports © WHO Disease Outbreak News · Arcs are great circles between centroids.',
       }),
       'bottom-right',
     );
@@ -232,22 +290,21 @@ export function WorldMap({ countries, selectedIso3, onSelect, origins, routes }:
     const popup = new Popup({
       closeButton: false,
       closeOnClick: false,
-      offset: 12,
-      maxWidth: '240px',
+      offset: 11,
+      maxWidth: '260px',
     });
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     let raf = 0;
 
-    const resize = () => {
+    const observer = new ResizeObserver(() => {
       map.resize();
-    };
-    const observer = new ResizeObserver(resize);
+    });
     observer.observe(container);
 
     const animate = (now: number) => {
       if (cancelled) return;
       if (map.getLayer('arc-modelled')) {
-        const phase = (now / 900) % 1;
+        const phase = (now / 950) % 1;
         map.setPaintProperty('arc-modelled', 'line-dasharray', [
           0.25 + phase,
           1.15,
@@ -255,10 +312,10 @@ export function WorldMap({ countries, selectedIso3, onSelect, origins, routes }:
           1.15,
         ]);
       }
-      if (map.getLayer('outbreak-halo')) {
-        const wave = (Math.sin(now / 680) + 1) / 2;
-        map.setPaintProperty('outbreak-halo', 'circle-radius', 9 + wave * 18);
-        map.setPaintProperty('outbreak-halo', 'circle-opacity', 0.34 * (1 - wave * 0.72));
+      if (map.getLayer('pin-halo')) {
+        const wave = (Math.sin(now / 760) + 1) / 2;
+        map.setPaintProperty('pin-halo', 'circle-radius', 8 + wave * 15);
+        map.setPaintProperty('pin-halo', 'circle-opacity', 0.3 * (1 - wave * 0.75));
       }
       raf = requestAnimationFrame(animate);
     };
@@ -277,7 +334,7 @@ export function WorldMap({ countries, selectedIso3, onSelect, origins, routes }:
             id: 'graticule-lines',
             type: 'line',
             source: 'graticule',
-            paint: { 'line-color': COLOURS.graticule, 'line-width': 0.7, 'line-opacity': 0.85 },
+            paint: { 'line-color': C.graticule, 'line-width': 0.6, 'line-opacity': 0.8 },
           });
 
           map.addSource('countries', { type: 'geojson', data: data as never, promoteId: 'iso3' });
@@ -286,33 +343,14 @@ export function WorldMap({ countries, selectedIso3, onSelect, origins, routes }:
             type: 'fill',
             source: 'countries',
             paint: {
-              'fill-color': [
-                'case',
-                ['boolean', ['feature-state', 'selected'], false],
-                COLOURS.landSelected,
-                ['boolean', ['feature-state', 'outbreak'], false],
-                COLOURS.landOutbreak,
-                ['>', ['coalesce', ['feature-state', 'share'], 0], 0],
-                [
-                  'interpolate',
-                  ['linear'],
-                  ['coalesce', ['feature-state', 'share'], 0],
-                  0,
-                  '#6f8ea8',
-                  0.2,
-                  '#3b82c4',
-                  1,
-                  COLOURS.landOrigin,
-                ],
-                COLOURS.land,
-              ] as ExpressionSpecification,
+              'fill-color': fillColour,
               'fill-opacity': [
                 'case',
                 ['boolean', ['feature-state', 'hover'], false],
                 1,
-                ['boolean', ['feature-state', 'selected'], false],
-                0.96,
-                0.9,
+                ['boolean', ['feature-state', 'affected'], false],
+                0.92,
+                0.78,
               ] as ExpressionSpecification,
             },
           });
@@ -324,18 +362,22 @@ export function WorldMap({ countries, selectedIso3, onSelect, origins, routes }:
               'line-color': [
                 'case',
                 ['boolean', ['feature-state', 'selected'], false],
-                COLOURS.outlineSelected,
+                '#d6fff6',
+                ['boolean', ['feature-state', 'compared'], false],
+                '#ffd166',
                 ['boolean', ['feature-state', 'hover'], false],
-                COLOURS.outlineHover,
-                COLOURS.outline,
+                C.outlineHover,
+                C.outline,
               ] as ExpressionSpecification,
               'line-width': [
                 'case',
                 ['boolean', ['feature-state', 'selected'], false],
-                2.2,
+                2.1,
+                ['boolean', ['feature-state', 'compared'], false],
+                1.9,
                 ['boolean', ['feature-state', 'hover'], false],
-                1.25,
-                0.55,
+                1.2,
+                0.45,
               ] as ExpressionSpecification,
             },
           });
@@ -350,9 +392,15 @@ export function WorldMap({ countries, selectedIso3, onSelect, origins, routes }:
             source: 'arcs',
             layout: { 'line-cap': 'round', 'line-join': 'round' },
             paint: {
-              'line-color': arcColour,
-              'line-width': ['*', ['get', 'width'], 3.4] as ExpressionSpecification,
-              'line-opacity': 0.28,
+              'line-color': [
+                'match',
+                ['get', 'valueType'],
+                'observed',
+                C.arcObserved,
+                C.arcEstimated,
+              ] as ExpressionSpecification,
+              'line-width': ['*', ['get', 'width'], 3.2] as ExpressionSpecification,
+              'line-opacity': 0.22,
               'line-blur': 5,
             },
           });
@@ -363,9 +411,9 @@ export function WorldMap({ countries, selectedIso3, onSelect, origins, routes }:
             filter: ['==', ['get', 'valueType'], 'observed'],
             layout: { 'line-cap': 'round', 'line-join': 'round' },
             paint: {
-              'line-color': COLOURS.arcObserved,
+              'line-color': C.arcObserved,
               'line-width': ['get', 'width'] as ExpressionSpecification,
-              'line-opacity': 0.95,
+              'line-opacity': 0.9,
             },
           });
           map.addLayer({
@@ -375,65 +423,60 @@ export function WorldMap({ countries, selectedIso3, onSelect, origins, routes }:
             filter: ['!=', ['get', 'valueType'], 'observed'],
             layout: { 'line-cap': 'round', 'line-join': 'round' },
             paint: {
-              'line-color': COLOURS.arcEstimated,
+              'line-color': C.arcEstimated,
               'line-width': ['get', 'width'] as ExpressionSpecification,
-              'line-opacity': 0.9,
+              'line-opacity': 0.82,
               'line-dasharray': [0.6, 1.2],
             },
           });
 
-          map.addSource('outbreaks', {
+          map.addSource('pin', {
             type: 'geojson',
             data: { type: 'FeatureCollection', features: [] },
           });
           map.addLayer({
-            id: 'outbreak-halo',
+            id: 'pin-halo',
             type: 'circle',
-            source: 'outbreaks',
+            source: 'pin',
             paint: {
-              'circle-radius': 12,
-              'circle-color': COLOURS.landOutbreak,
-              'circle-opacity': 0.28,
-              'circle-blur': 0.45,
+              'circle-radius': 11,
+              'circle-color': C.selected,
+              'circle-opacity': 0.26,
+              'circle-blur': 0.4,
             },
           });
           map.addLayer({
-            id: 'outbreak-points',
+            id: 'pin-core',
             type: 'circle',
-            source: 'outbreaks',
+            source: 'pin',
             paint: {
               'circle-radius': 4.5,
-              'circle-color': '#fecdd3',
+              'circle-color': '#eafff9',
               'circle-stroke-width': 2,
-              'circle-stroke-color': COLOURS.landOutbreak,
+              'circle-stroke-color': C.selected,
             },
           });
 
-          map.addSource('destination', {
+          map.addSource('order', {
             type: 'geojson',
             data: { type: 'FeatureCollection', features: [] },
           });
           map.addLayer({
-            id: 'destination-point',
-            type: 'circle',
-            source: 'destination',
+            id: 'order-labels',
+            type: 'symbol',
+            source: 'order',
+            layout: {
+              'text-field': ['get', 'label'],
+              'text-size': 10,
+              'text-allow-overlap': false,
+              'text-font': ['Noto Sans Regular'],
+            },
             paint: {
-              'circle-radius': 6,
-              'circle-color': '#f4fffb',
-              'circle-stroke-width': 3,
-              'circle-stroke-color': COLOURS.outlineSelected,
+              'text-color': '#06121a',
+              'text-halo-color': '#f4fffc',
+              'text-halo-width': 1.6,
             },
           });
-
-          const readCountry = (event: MapLayerMouseEvent): HoveredCountry | null => {
-            const properties: unknown = event.features?.[0]?.properties;
-            if (typeof properties !== 'object' || properties === null) return null;
-            const record = properties as Record<string, unknown>;
-            const iso3 = record['iso3'];
-            const name = record['name'];
-            if (typeof iso3 !== 'string' || !iso3) return null;
-            return { iso3, name: typeof name === 'string' && name ? name : iso3 };
-          };
 
           let hoveredId: string | null = null;
           const clearHover = () => {
@@ -441,25 +484,68 @@ export function WorldMap({ countries, selectedIso3, onSelect, origins, routes }:
               map.setFeatureState({ source: 'countries', id: hoveredId }, { hover: false });
               hoveredId = null;
             }
-            setHover(null);
+            popup.remove();
             map.getCanvas().style.cursor = '';
           };
 
           map.on('mousemove', 'country-fill', (event: MapLayerMouseEvent) => {
-            const country = readCountry(event);
-            if (!country) return;
-            if (hoveredId && hoveredId !== country.iso3) {
+            const properties: unknown = event.features?.[0]?.properties;
+            if (typeof properties !== 'object' || properties === null) return;
+            const record = properties as Record<string, unknown>;
+            const iso3 = record['iso3'];
+            if (typeof iso3 !== 'string' || !iso3) return;
+            if (hoveredId && hoveredId !== iso3) {
               map.setFeatureState({ source: 'countries', id: hoveredId }, { hover: false });
             }
-            hoveredId = country.iso3;
-            map.setFeatureState({ source: 'countries', id: country.iso3 }, { hover: true });
+            hoveredId = iso3;
+            map.setFeatureState({ source: 'countries', id: iso3 }, { hover: true });
             map.getCanvas().style.cursor = 'pointer';
-            setHover(country);
+
+            const name =
+              typeof record['name'] === 'string' && record['name'] ? record['name'] : iso3;
+            const entry = spreadRef.current.get(iso3);
+            const root = document.createElement('div');
+            root.append(node('strong', name));
+            if (entry) {
+              root.append(
+                node(
+                  'div',
+                  `${diseaseRef.current ?? 'Reported'} · arrived ${entry.firstYear ?? 'unknown'} (#${entry.arrivalOrder})`,
+                  { color: '#2ee6c0', fontSize: '11px', marginTop: '2px' },
+                ),
+                node(
+                  'div',
+                  `${formatCount(entry.cases)} cases · ${formatCount(entry.deaths)} deaths · ${entry.reportCount} report${entry.reportCount === 1 ? '' : 's'}`,
+                  { color: '#a8bacd', fontSize: '10.5px' },
+                ),
+              );
+            } else {
+              root.append(
+                node('div', `No ${diseaseRef.current ?? 'outbreak'} report on file`, {
+                  color: '#74889e',
+                  fontSize: '10.5px',
+                  marginTop: '2px',
+                }),
+              );
+            }
+            root.append(
+              node('div', 'Click to open its full record', {
+                color: '#4f6377',
+                fontSize: '10px',
+                marginTop: '3px',
+              }),
+            );
+            popup.setLngLat(event.lngLat).setDOMContent(root).addTo(map);
           });
           map.on('mouseleave', 'country-fill', clearHover);
           map.on('click', 'country-fill', (event: MapLayerMouseEvent) => {
-            const country = readCountry(event);
-            if (country) selectRef.current(country.iso3);
+            const properties: unknown = event.features?.[0]?.properties;
+            if (typeof properties !== 'object' || properties === null) return;
+            const iso3 = (properties as Record<string, unknown>)['iso3'];
+            if (typeof iso3 !== 'string' || !iso3) return;
+            // Shift-click adds the second side of the comparison.
+            const additive = event.originalEvent.shiftKey || event.originalEvent.metaKey;
+            selectRef.current(iso3, additive);
           });
 
           const showArc = (event: MapLayerMouseEvent) => {
@@ -470,15 +556,9 @@ export function WorldMap({ countries, selectedIso3, onSelect, origins, routes }:
           };
           map.on('mousemove', 'arc-observed', showArc);
           map.on('mousemove', 'arc-modelled', showArc);
-          map.on('mouseleave', 'arc-observed', () => {
-            popup.remove();
-          });
-          map.on('mouseleave', 'arc-modelled', () => {
-            popup.remove();
-          });
 
           if (!reducedMotion) raf = requestAnimationFrame(animate);
-          resize();
+          map.resize();
           setReady(true);
         } catch (cause) {
           if (cancelled) return;
@@ -490,6 +570,7 @@ export function WorldMap({ countries, selectedIso3, onSelect, origins, routes }:
         }
       })();
     };
+
     const boot = () => {
       if (cancelled || started) return;
       if (map.isStyleLoaded()) start();
@@ -513,106 +594,145 @@ export function WorldMap({ countries, selectedIso3, onSelect, origins, routes }:
     if (!map || !ready || !map.getSource('countries')) return;
     map.removeFeatureState({ source: 'countries' });
     for (const country of countries) {
-      if (!country.has_reported_outbreak) continue;
-      map.setFeatureState({ source: 'countries', id: country.iso3 }, { outbreak: true });
+      if (country.has_reported_outbreak || (country.diseases?.length ?? 0) > 0) {
+        map.setFeatureState({ source: 'countries', id: country.iso3 }, { hasAnyReport: true });
+      }
     }
-    for (const origin of origins) {
+    for (const entry of spread) {
       map.setFeatureState(
-        { source: 'countries', id: origin.origin_iso3 },
-        { share: origin.share_of_total },
+        { source: 'countries', id: entry.iso3 },
+        { affected: true, order: entry.arrivalShare },
       );
+    }
+    if (comparisonIso3) {
+      map.setFeatureState({ source: 'countries', id: comparisonIso3 }, { compared: true });
     }
     if (selectedIso3) {
       map.setFeatureState({ source: 'countries', id: selectedIso3 }, { selected: true });
     }
-  }, [ready, countries, origins, selectedIso3]);
+  }, [ready, countries, spread, selectedIso3, comparisonIso3]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
     const source = map.getSource('arcs');
-    if (source instanceof GeoJSONSource) void source.setData(arcFeatures(routes, origins));
-  }, [ready, routes, origins]);
+    if (source instanceof GeoJSONSource) {
+      void source.setData(
+        showFlows ? arcFeatures(routes, origins) : { type: 'FeatureCollection', features: [] },
+      );
+    }
+  }, [ready, routes, origins, showFlows]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
-    const outbreaks = map.getSource('outbreaks');
-    if (outbreaks instanceof GeoJSONSource) {
-      void outbreaks.setData(pointFeatures(countries, (country) => country.has_reported_outbreak));
-    }
-    const destination = map.getSource('destination');
-    if (destination instanceof GeoJSONSource) {
-      void destination.setData(
-        pointFeatures(
-          countries,
-          (country) => country.iso3 === selectedIso3 && !country.has_reported_outbreak,
-        ),
-      );
-    }
-  }, [ready, countries, selectedIso3]);
+    const pin = map.getSource('pin');
+    if (pin instanceof GeoJSONSource) void pin.setData(pointFor(selected));
+    const order = map.getSource('order');
+    if (order instanceof GeoJSONSource) void order.setData(markerFeatures(countries, spread, 25));
+  }, [ready, countries, spread, selected]);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !ready || !selectedIso3 || !selected) return;
+    if (!map || !ready || !selected || flewTo.current === selected.iso3) return;
     const { centroid_lat: lat, centroid_lon: lon } = selected;
-    if (lat === null || lon === null || flewTo.current === selectedIso3) return;
-    flewTo.current = selectedIso3;
-    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (lat === null || lon === null) return;
+    flewTo.current = selected.iso3;
     const camera = {
       center: [lon, lat] as [number, number],
-      zoom: Math.max(map.getZoom(), 2.4),
+      zoom: Math.max(map.getZoom(), 2.3),
       essential: true,
     };
-    if (reducedMotion) map.jumpTo(camera);
-    else map.easeTo({ ...camera, duration: 1100 });
-  }, [ready, selected, selectedIso3]);
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) map.jumpTo(camera);
+    else map.easeTo({ ...camera, duration: 950 });
+  }, [ready, selected]);
+
+  const firstYear = spread.reduce<number | null>(
+    (min, entry) =>
+      entry.firstYear !== null && (min === null || entry.firstYear < min) ? entry.firstYear : min,
+    null,
+  );
 
   return (
     <div className="map">
       <div className="map__canvas" ref={containerRef} data-testid="map-canvas" />
-      <div className="map__vignette" />
+
       {boundaryError && (
         <div className="map__status">
           <div>
             <p style={{ maxWidth: 420 }}>{boundaryError}</p>
-            <p style={{ color: 'var(--text-faint)', fontSize: 12 }}>
-              The country list and all risk estimates still work without the map.
+            <p style={{ color: 'var(--ink-4)', fontSize: 12 }}>
+              The disease list, country records and every estimate still work without the map.
             </p>
           </div>
         </div>
       )}
-      <div className="map__overlay">
-        <div className="map__hud-title">
-          <span className="map__kicker">Destination</span>
-          <strong>{selected?.name ?? 'Select a country'}</strong>
-          {hover && hover.iso3 !== selectedIso3 && <span className="map__hover">{hover.name}</span>}
+
+      <div className="map__hud">
+        <div className="hud hud--title">
+          <span className="hud__kicker">
+            {diseaseName ? (
+              <>
+                <span className="dot" style={{ color: 'var(--accent)' }} aria-hidden="true" />
+                Spread of
+              </>
+            ) : (
+              'No disease selected'
+            )}
+          </span>
+          <h2 className="hud__name">{diseaseName ?? 'Pick a disease'}</h2>
+          {diseaseName && (
+            <dl className="hud__stats">
+              <div className="hud__stat">
+                <dt>Countries</dt>
+                <dd className="num">{spread.length}</dd>
+              </div>
+              <div className="hud__stat">
+                <dt>First seen</dt>
+                <dd className="num">{firstYear ?? '—'}</dd>
+              </div>
+              <div className="hud__stat">
+                <dt>Showing</dt>
+                <dd className="num">
+                  {yearCeiling === null ? 'all years' : <>up to {yearCeiling}</>}
+                </dd>
+              </div>
+            </dl>
+          )}
         </div>
-        <div className="legend">
-          <span className="legend__item">
-            <span className="swatch swatch--outbreak" />
-            Reported outbreak
-          </span>
-          <span className="legend__item">
-            <span className="swatch swatch--origin" />
-            Arrival share
-          </span>
-          <span className="legend__item">
-            <span className="swatch swatch--observed" />
-            Observed flow
-          </span>
-          <span className="legend__item">
-            <span className="swatch swatch--estimated" />
-            Modelled flow
-          </span>
-        </div>
-        <p className="map__note">
-          {routes.length > 0
-            ? `${routes.length} corridor${routes.length === 1 ? '' : 's'} into this destination. `
-            : ''}
-          Arc thickness follows each origin&apos;s share of the modelled arrival rate. Paths run
-          between country centroids, not along flight tracks.
-        </p>
+
+        {spread.length > 0 && (
+          <div className="hud legend">
+            <span className="legend__title">Order of arrival</span>
+            <span className="legend__ramp" aria-hidden="true">
+              {C.ramp.map((colour) => (
+                <i key={colour} style={{ background: colour }} />
+              ))}
+            </span>
+            <span className="legend__scale">
+              <span>first</span>
+              <span>latest</span>
+            </span>
+            {showFlows && (
+              <>
+                <span className="legend__row">
+                  <span className="swatch swatch--line" style={{ background: C.arcObserved }} />
+                  Observed flow
+                </span>
+                <span className="legend__row">
+                  <span className="swatch swatch--line" style={{ background: C.arcEstimated }} />
+                  Modelled flow
+                </span>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="hud map__hint">
+        {spread.length > 0
+          ? 'Numbers mark the order countries first reported this disease. Click a country for its record, shift-click to compare two.'
+          : 'Click any country to see every disease ever reported there. Shift-click a second one to compare.'}
       </div>
     </div>
   );

@@ -8,10 +8,10 @@ interface Props {
 
 export function ErrorNotice({ error, onRetry, context }: Props) {
   return (
-    <div className="error" role="alert">
+    <div className="notice" role="alert">
       <p style={{ margin: '0 0 6px' }}>{describeError(error, context)}</p>
       {onRetry && (
-        <button type="button" className="button" onClick={onRetry}>
+        <button type="button" className="btn" onClick={onRetry}>
           Try again
         </button>
       )}

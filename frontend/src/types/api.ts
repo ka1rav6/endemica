@@ -234,7 +234,11 @@ export interface DiseaseOption {
 export interface PathogenSummary {
   key: string | null;
   label: string;
+  disease_key?: string | null;
+  disease_name?: string | null;
   disease_label?: string | null;
+  disease_family?: string | null;
+  disease_source?: string | null;
   confidence: string | null;
   establishment_estimable: boolean;
   establishment_note: string | null;
@@ -336,6 +340,7 @@ export interface ApiErrorBody {
 export interface RiskParams {
   pathogen?: string | undefined;
   disease?: string | undefined;
+  disease_key?: string | undefined;
   horizon_days?: number;
   underreporting_low?: number;
   underreporting_central?: number;
@@ -347,4 +352,92 @@ export interface RiskParams {
   passenger_scale?: number;
   threshold?: number;
   max_origins?: number;
+}
+
+export interface DiseaseHistory {
+  disease_key: string;
+  disease_name: string;
+  disease_family: string | null;
+  pathogen_key: string | null;
+  report_count: number;
+  country_count: number;
+  grounded_country_count: number;
+  first_published_at: string | null;
+  last_published_at: string | null;
+  cases_confirmed: number | null;
+  deaths: number | null;
+  source_labels: string[];
+}
+
+export interface CountrySpread {
+  country_iso3: string;
+  country_name: string;
+  centroid_lat: number | null;
+  centroid_lon: number | null;
+  report_count: number;
+  first_published_at: string | null;
+  last_published_at: string | null;
+  cases_confirmed: number | null;
+  deaths: number | null;
+  grounded: boolean;
+  report_url: string | null;
+  report_title: string | null;
+  arrival_order: number;
+}
+
+export interface DiseaseTimelinePoint {
+  year: number;
+  report_count: number;
+  country_count: number;
+  new_country_count: number;
+  cumulative_country_count: number;
+  new_countries: string[];
+  cases_confirmed: number | null;
+  deaths: number | null;
+}
+
+export interface DiseaseSpread {
+  disease_key: string;
+  disease_name: string;
+  disease_family: string | null;
+  pathogen_key: string | null;
+  report_count: number;
+  country_count: number;
+  first_published_at: string | null;
+  last_published_at: string | null;
+  cases_confirmed: number | null;
+  deaths: number | null;
+  is_active: boolean;
+  countries: CountrySpread[];
+  timeline: DiseaseTimelinePoint[];
+  note: string;
+}
+
+export interface CountryDisease {
+  disease_key: string;
+  disease_name: string;
+  disease_family: string | null;
+  pathogen_key: string | null;
+  report_count: number;
+  first_published_at: string | null;
+  last_published_at: string | null;
+  cases_confirmed: number | null;
+  deaths: number | null;
+  grounded: boolean;
+  is_active: boolean;
+  report_url: string | null;
+}
+
+export interface CountryProfile {
+  iso3: string;
+  name: string;
+  region: string | null;
+  subregion: string | null;
+  population: number | null;
+  centroid_lat: number | null;
+  centroid_lon: number | null;
+  inbound_flow_count: number;
+  report_count: number;
+  active_disease_count: number;
+  diseases: CountryDisease[];
 }

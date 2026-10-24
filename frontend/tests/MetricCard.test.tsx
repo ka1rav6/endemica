@@ -72,7 +72,9 @@ describe('MetricCard', () => {
   });
 
   it('renders zero as a real result, not as missing', () => {
-    render(<MetricCard question="Will it establish?" band={band({ low: 0, central: 0, high: 0 })} />);
+    render(
+      <MetricCard question="Will it establish?" band={band({ low: 0, central: 0, high: 0 })} />,
+    );
     expect(screen.getByText('0.0%')).toBeInTheDocument();
     expect(screen.queryByText(/Not estimable/)).not.toBeInTheDocument();
   });
@@ -90,7 +92,9 @@ describe('MetricCard', () => {
 
   it('exposes the range to assistive technology', () => {
     render(<MetricCard question="Will it arrive?" band={band()} />);
-    expect(screen.getByRole('img', { name: /Scenario range from 10\.0% to 60\.0%/ })).toBeInTheDocument();
+    expect(
+      screen.getByRole('img', { name: /Scenario range from 10\.0% to 60\.0%/ }),
+    ).toBeInTheDocument();
   });
 
   it('renders the question as a heading', () => {

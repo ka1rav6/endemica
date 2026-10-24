@@ -1,21 +1,18 @@
-import type { Country, DiseaseOption, HealthResponse } from '@/types/api';
+import { useMemo, useState } from 'react';
+import type { Country, DiseaseHistory, HealthResponse } from '@/types/api';
 
 interface Props {
   countries: Country[];
   selectedIso3: string | null;
   onSelect: (iso3: string) => void;
-  diseases: DiseaseOption[];
-  selectedDisease: string | null;
-  onDisease: (disease: DiseaseOption | null) => void;
+  diseases: DiseaseHistory[];
+  selectedDiseaseKey: string | null;
+  onSelectDisease: (key: string | null) => void;
   health: HealthResponse | null;
+  showFlows: boolean;
+  onToggleFlows: () => void;
   onIngest: () => void;
   ingesting: boolean;
-}
-
-function hasDisease(country: Country, disease: string | null): boolean {
-  if (!disease) return false;
-  const needle = disease.toLowerCase();
-  return (country.diseases ?? []).some((name) => name.toLowerCase() === needle);
 }
 
 export function TopBar({
@@ -23,85 +20,137 @@ export function TopBar({
   selectedIso3,
   onSelect,
   diseases,
-  selectedDisease,
-  onDisease,
+  selectedDiseaseKey,
+  onSelectDisease,
   health,
+  showFlows,
+  onToggleFlows,
   onIngest,
   ingesting,
 }: Props) {
-  const tinyfish = health?.components.find((component) => component.name === 'tinyfish');
+  const [query, setQuery] = useState('');
   const database = health?.components.find((component) => component.name === 'database');
+  const tinyfish = health?.components.find((component) => component.name === 'tinyfish');
+
+  const matches = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return [];
+    return countries
+      .filter(
+        (country) =>
+          country.name.toLowerCase().includes(needle) ||
+          country.iso3.toLowerCase().startsWith(needle),
+      )
+      .slice(0, 8);
+  }, [countries, query]);
+
+  const selectedName = countries.find((country) => country.iso3 === selectedIso3)?.name ?? '';
 
   return (
-    <header className="topbar">
-      <div className="topbar__brand">
-        <span className="mark" aria-hidden="true">
-          <svg viewBox="0 0 32 32" width="22" height="22">
-            <circle cx="16" cy="16" r="13" fill="none" stroke="currentColor" strokeWidth="1.4" />
-            <path
-              d="M5 19c4.2-7 7.2-1.5 11.2-8.2C19.6 6.2 23 8 27 13"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.6"
-              strokeLinecap="round"
-            />
-            <circle cx="23.2" cy="10.2" r="2.1" fill="currentColor" />
-          </svg>
+    <header className="head">
+      <div className="brand">
+        <span className="brand__mark" aria-hidden="true">
+          E
         </span>
-        <h1 className="topbar__title">EpiRoute</h1>
-        <span className="topbar__tagline">
-          sourced outbreaks · air-travel connectivity · separated risks
-        </span>
+        <span className="brand__name">Endemica</span>
+        <span className="brand__tag">Outbreak atlas</span>
       </div>
 
-      <div className="topbar__spacer" />
-
-      <div className="topbar__controls">
-        <div className="field">
-          <label className="field__label" htmlFor="destination-select">
-            Destination
-          </label>
-          <select
-            id="destination-select"
-            value={selectedIso3 ?? ''}
-            onChange={(event) => {
-              onSelect(event.target.value);
-            }}
-          >
-            <option value="" disabled>
-              Choose a destination
-            </option>
-            {countries.map((country) => (
-              <option key={country.iso3} value={country.iso3}>
-                {country.name}
-                {country.has_reported_outbreak ? ' — cases reported' : ''}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <button
-          type="button"
-          className="button button--primary"
-          onClick={onIngest}
-          disabled={ingesting}
-          title="Fetch the latest WHO Disease Outbreak News and run the validation gate"
+      <div className="head__group">
+        <label className="visually-hidden" htmlFor="disease-select">
+          Disease
+        </label>
+        <select
+          id="disease-select"
+          className="select"
+          value={selectedDiseaseKey ?? ''}
+          onChange={(event) => {
+            onSelectDisease(event.target.value || null);
+          }}
+          style={{ maxWidth: 260 }}
         >
-          {ingesting ? 'Ingesting…' : 'Run ingest'}
-        </button>
+          <option value="">All diseases</option>
+          {diseases.map((disease) => (
+            <option key={disease.disease_key} value={disease.disease_key}>
+              {disease.disease_name} · {disease.country_count} countries
+            </option>
+          ))}
+        </select>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 11 }}>
-          <span style={{ color: database?.status === 'ok' ? 'var(--ok)' : 'var(--outbreak)' }}>
-            ● database {database?.status ?? 'unknown'}
-          </span>
-          <span
-            style={{ color: tinyfish?.status === 'ok' ? 'var(--ok)' : 'var(--text-faint)' }}
-            title={tinyfish?.detail ?? undefined}
-          >
-            ● TinyFish {tinyfish?.status === 'ok' ? 'configured' : 'not configured'}
-          </span>
+        <div style={{ position: 'relative' }}>
+          <label className="field" style={{ width: 188 }}>
+            <span className="field__icon" aria-hidden="true">
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+                <circle cx="6.8" cy="6.8" r="4.6" stroke="currentColor" strokeWidth="1.6" />
+                <path d="M10.4 10.4 14 14" stroke="currentColor" strokeWidth="1.6" />
+              </svg>
+            </span>
+            <input
+              className="field__input"
+              type="search"
+              placeholder={selectedName || 'Find a country'}
+              value={query}
+              onChange={(event) => {
+                setQuery(event.target.value);
+              }}
+              aria-label="Find a country"
+            />
+          </label>
+          {matches.length > 0 && (
+            <ul className="typeahead">
+              {matches.map((country) => (
+                <li key={country.iso3}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onSelect(country.iso3);
+                      setQuery('');
+                    }}
+                  >
+                    <span>{country.name}</span>
+                    {(country.diseases?.length ?? 0) > 0 && (
+                      <span className="typeahead__meta num">
+                        {country.diseases?.length} on record
+                      </span>
+                    )}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </div>
+
+      <span className="head__spacer" />
+
+      <button
+        type="button"
+        className="btn"
+        aria-pressed={showFlows}
+        onClick={onToggleFlows}
+        title="Draw the passenger-flow corridors that feed the importation estimate"
+        style={showFlows ? { borderColor: 'var(--accent-dim)', color: 'var(--accent)' } : undefined}
+      >
+        Flight corridors
+      </button>
+
+      {health && (
+        <div className="health">
+          <span className="health__item" title={database?.detail ?? ''}>
+            <span className={`health__led health__led--${database?.status ?? 'unavailable'}`} />
+            database {database?.status ?? 'unknown'}
+          </span>
+          <span className="health__item" title={tinyfish?.detail ?? ''}>
+            <span className={`health__led health__led--${tinyfish?.status ?? 'unavailable'}`} />
+            TinyFish {tinyfish?.status === 'ok' ? 'configured' : 'not configured'}
+          </span>
+        </div>
+      )}
+
+      <button type="button" className="btn" onClick={onIngest} disabled={ingesting}>
+        {ingesting ? <span className="spinner" /> : null}
+        {ingesting ? 'Refreshing…' : 'Refresh reports'}
+      </button>
     </header>
   );
 }

@@ -1,6 +1,9 @@
 import { apiGet, apiPost } from '@/services/client';
 import type {
   CountryListResponse,
+  CountryProfile,
+  DiseaseHistory,
+  DiseaseSpread,
   GravityModel,
   HealthResponse,
   IngestionRun,
@@ -83,3 +86,23 @@ export interface IngestResult {
 
 export const triggerIngest = (limit = 20, useAgent = false): Promise<IngestResult> =>
   apiPost<IngestResult>(`${V1}/admin/ingest`, { limit, use_agent: useAgent });
+
+export const getDiseaseHistory = (signal?: AbortSignal): Promise<DiseaseHistory[]> =>
+  apiGet<DiseaseHistory[]>(`${V1}/diseases/history`, undefined, signal ? { signal } : undefined);
+
+export const getDiseaseSpread = (
+  diseaseKey: string,
+  signal?: AbortSignal,
+): Promise<DiseaseSpread> =>
+  apiGet<DiseaseSpread>(
+    `${V1}/diseases/${encodeURIComponent(diseaseKey)}/spread`,
+    undefined,
+    signal ? { signal } : undefined,
+  );
+
+export const getCountryProfile = (iso3: string, signal?: AbortSignal): Promise<CountryProfile> =>
+  apiGet<CountryProfile>(
+    `${V1}/countries/${encodeURIComponent(iso3)}/profile`,
+    undefined,
+    signal ? { signal } : undefined,
+  );

@@ -14,6 +14,9 @@ const risk = vi.hoisted(() => ({ current: null as unknown }));
 vi.mock('@/services/epiroute', () => ({
   getHealth: vi.fn(() => Promise.resolve(fixturesRef.health)),
   getCountries: vi.fn(() => Promise.resolve({ total: 2, items: fixturesRef.countries })),
+  getDiseaseHistory: vi.fn(() => Promise.resolve(fixturesRef.diseaseHistory)),
+  getDiseaseSpread: vi.fn(() => Promise.resolve(fixturesRef.diseaseSpread)),
+  getCountryProfile: vi.fn((iso3: string) => Promise.resolve(fixturesRef.countryProfile(iso3))),
   getOutbreaks: vi.fn(() => Promise.resolve(fixturesRef.outbreaks)),
   getOutbreak: vi.fn(() =>
     Promise.resolve({
@@ -104,6 +107,18 @@ const fixturesRef = fixtures;
 
 const { default: App } = await import('@/App');
 
+/** Render and open the Risk tab, which is no longer the landing panel. */
+async function renderOnRiskTab() {
+  render(<App />);
+  await waitFor(() => {
+    expect(screen.getByRole('tab', { name: 'Risk' })).toBeInTheDocument();
+  });
+  await userEvent.click(screen.getByRole('tab', { name: 'Risk' }));
+  await waitFor(() => {
+    expect(screen.getByTestId('presence-card')).toBeInTheDocument();
+  });
+}
+
 describe('App', () => {
   beforeEach(() => {
     risk.current = fixtures.riskResponse();
@@ -121,28 +136,21 @@ describe('App', () => {
   });
 
   it('shows the three risk quantities separately', async () => {
-    render(<App />);
-    await waitFor(() => {
-      expect(screen.getByTestId('presence-card')).toBeInTheDocument();
-    });
+    await renderOnRiskTab();
     expect(screen.getByTestId('importation-card')).toBeInTheDocument();
     expect(screen.getByTestId('establishment-card')).toBeInTheDocument();
   });
 
   it('states that flight connectivity is not evidence of presence', async () => {
-    render(<App />);
-    await waitFor(() => {
-      expect(screen.getByTestId('presence-card')).toHaveTextContent(
-        /never used as evidence of presence/,
-      );
-    });
+    await renderOnRiskTab();
+    expect(screen.getByTestId('presence-card')).toHaveTextContent(
+      /never used as evidence of presence/,
+    );
   });
 
   it('shows importation and establishment as different numbers', async () => {
-    render(<App />);
-    await waitFor(() => {
-      expect(screen.getByTestId('importation-card')).toHaveTextContent('18.0%');
-    });
+    await renderOnRiskTab();
+    expect(screen.getByTestId('importation-card')).toHaveTextContent('18.0%');
     expect(screen.getByTestId('establishment-card')).toHaveTextContent('2.3%');
   });
 
@@ -156,27 +164,23 @@ describe('App', () => {
 
   it('shows "not estimable" with a reason when inputs are missing', async () => {
     risk.current = fixtures.unavailableRisk();
-    render(<App />);
-    await waitFor(() => {
-      expect(screen.getByTestId('importation-card-unknown')).toHaveTextContent(
-        /no passenger-flow data/,
-      );
-    });
+    await renderOnRiskTab();
+    expect(screen.getByTestId('importation-card-unknown')).toHaveTextContent(
+      /no passenger-flow data/,
+    );
   });
 
   it('lists the origins that could not be used, with reasons', async () => {
     risk.current = fixtures.unavailableRisk();
-    render(<App />);
-    await waitFor(() => {
-      expect(screen.getByText(/Origins that could not be used/)).toBeInTheDocument();
-    });
+    await renderOnRiskTab();
+    expect(screen.getByText(/Origins that could not be used/)).toBeInTheDocument();
     expect(screen.getByText(/no passenger flow to this destination/)).toBeInTheDocument();
   });
 
   it('shows the assumptions tab with each value attributed to its source', async () => {
     render(<App />);
     await waitFor(() => {
-      expect(screen.getByTestId('presence-card')).toBeInTheDocument();
+      expect(screen.getByRole('tab', { name: 'Assumptions' })).toBeInTheDocument();
     });
     await userEvent.click(screen.getByRole('tab', { name: 'Assumptions' }));
     expect(screen.getByText(/changes a/)).toBeInTheDocument();
@@ -186,10 +190,7 @@ describe('App', () => {
 
   it('disables R and k when establishment is not estimable', async () => {
     risk.current = fixtures.riskResponse({ pathogen: fixtures.pathogens[1]! });
-    render(<App />);
-    await waitFor(() => {
-      expect(screen.getByTestId('presence-card')).toBeInTheDocument();
-    });
+    await renderOnRiskTab();
     await userEvent.click(screen.getByRole('tab', { name: 'Assumptions' }));
     expect(screen.getByLabelText(/Reproduction number/)).toBeDisabled();
     expect(screen.getByLabelText(/Cluster dispersion/)).toBeDisabled();
@@ -199,7 +200,7 @@ describe('App', () => {
   it('shows the source report with its evidence sentence', async () => {
     render(<App />);
     await waitFor(() => {
-      expect(screen.getByTestId('presence-card')).toBeInTheDocument();
+      expect(screen.getByRole('tab', { name: 'Reports' })).toBeInTheDocument();
     });
     await userEvent.click(screen.getByRole('tab', { name: 'Reports' }));
     const report = screen.getByRole('button', { name: /Test respiratory outbreak/ });
@@ -214,7 +215,7 @@ describe('App', () => {
   it('shows rejected extractions so the gate is visible', async () => {
     render(<App />);
     await waitFor(() => {
-      expect(screen.getByTestId('presence-card')).toBeInTheDocument();
+      expect(screen.getByRole('tab', { name: 'Reports' })).toBeInTheDocument();
     });
     await userEvent.click(screen.getByRole('tab', { name: 'Reports' }));
     await userEvent.click(screen.getByRole('button', { name: /Test respiratory outbreak/ }));
@@ -229,7 +230,7 @@ describe('App', () => {
   it('shows the model report with its caveat on the sources tab', async () => {
     render(<App />);
     await waitFor(() => {
-      expect(screen.getByTestId('presence-card')).toBeInTheDocument();
+      expect(screen.getByRole('tab', { name: 'Sources' })).toBeInTheDocument();
     });
     await userEvent.click(screen.getByRole('tab', { name: 'Sources' }));
     await waitFor(() => {
@@ -243,7 +244,7 @@ describe('App', () => {
   it('lists every source with its licence and limitations', async () => {
     render(<App />);
     await waitFor(() => {
-      expect(screen.getByTestId('presence-card')).toBeInTheDocument();
+      expect(screen.getByRole('tab', { name: 'Sources' })).toBeInTheDocument();
     });
     await userEvent.click(screen.getByRole('tab', { name: 'Sources' }));
     await waitFor(() => {
@@ -255,47 +256,42 @@ describe('App', () => {
   it('reports the outcome of an ingestion run', async () => {
     render(<App />);
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Run ingest' })).toBeEnabled();
+      expect(screen.getByRole('button', { name: /Refresh reports/ })).toBeEnabled();
     });
-    await userEvent.click(screen.getByRole('button', { name: 'Run ingest' }));
+    await userEvent.click(screen.getByRole('button', { name: /Refresh reports/ }));
     await waitFor(() => {
       expect(screen.getByText(/3 new and 17 updated report/)).toBeInTheDocument();
     });
   });
 
   it('shows the disclaimer', async () => {
-    render(<App />);
-    await waitFor(() => {
-      expect(screen.getByText(/not an official forecast/i)).toBeInTheDocument();
-    });
+    await renderOnRiskTab();
+    expect(screen.getByText(/not an official forecast/i)).toBeInTheDocument();
   });
 
-  it('lets a destination be chosen from the dropdown', async () => {
+  it('lets a destination be found by name', async () => {
     render(<App />);
     await waitFor(() => {
-      expect(screen.getByLabelText('Destination')).toBeInTheDocument();
+      expect(screen.getByLabelText('Find a country')).toBeInTheDocument();
     });
-    await userEvent.selectOptions(screen.getByLabelText('Destination'), 'ZZD');
+    await userEvent.type(screen.getByLabelText('Find a country'), 'Destination');
+    await userEvent.click(screen.getByRole('button', { name: /Destination Land/ }));
     await waitFor(() => {
       expect(screen.getByTestId('world-map')).toHaveTextContent('ZZD');
     });
   });
 
   it('marks which passenger volumes are observed and which are modelled', async () => {
-    render(<App />);
-    await waitFor(() => {
-      expect(screen.getByText(/Where the risk comes from/)).toBeInTheDocument();
-    });
+    await renderOnRiskTab();
+    expect(screen.getByText(/Where the risk comes from/)).toBeInTheDocument();
     const origins = screen.getByText(/Where the risk comes from/).closest('div');
     expect(origins).not.toBeNull();
     expect(within(origins!).getByText('obs')).toBeInTheDocument();
   });
 
   it('labels scenario markers as scenarios, not predictions', async () => {
-    render(<App />);
-    await waitFor(() => {
-      expect(screen.getByText(/Scenario thresholds/)).toBeInTheDocument();
-    });
+    await renderOnRiskTab();
+    expect(screen.getByText(/Scenario thresholds/)).toBeInTheDocument();
     expect(screen.getByText(/not a safety date/)).toBeInTheDocument();
   });
 });

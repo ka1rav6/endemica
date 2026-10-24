@@ -35,7 +35,7 @@ function ReportDetail({ report }: { report: OutbreakReportDetail }) {
                 <span style={{ fontSize: 11, color: 'var(--unknown)' }}>excluded from models</span>
               )}
             </div>
-            <dl className="origin__meta">
+            <dl className="kv">
               <div>
                 <dt>Confirmed</dt>
                 <dd>{formatCount(observation.cases_confirmed)}</dd>
@@ -133,7 +133,7 @@ export function ReportsPanel({ reports, onCountrySelect }: Props) {
 
   if (reports.length === 0) {
     return (
-      <div className="panel__section">
+      <div className="sec">
         <p className="empty">
           No outbreak reports are loaded. Run <code>just data-ingest</code> to fetch WHO Disease
           Outbreak News, or press &ldquo;Run ingest&rdquo; above.
@@ -143,8 +143,8 @@ export function ReportsPanel({ reports, onCountrySelect }: Props) {
   }
 
   return (
-    <div className="panel__section">
-      <h2 className="panel__heading">Sourced outbreak reports ({reports.length})</h2>
+    <div className="sec">
+      <h2 className="sec__title">Sourced outbreak reports ({reports.length})</h2>
       <ul className="list">
         {reports.map((report) => {
           const expanded = expandedId === report.id;
@@ -185,7 +185,7 @@ export function ReportsPanel({ reports, onCountrySelect }: Props) {
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
                     {report.provenance.source_url && (
                       <a
-                        className="button"
+                        className="btn"
                         href={report.provenance.source_url}
                         target="_blank"
                         rel="noreferrer noopener"
@@ -197,7 +197,7 @@ export function ReportsPanel({ reports, onCountrySelect }: Props) {
                     {primaryCountry !== undefined && (
                       <button
                         type="button"
-                        className="button"
+                        className="btn"
                         onClick={() => {
                           onCountrySelect(primaryCountry);
                         }}

@@ -33,7 +33,7 @@ function PresenceCard({ risk }: { risk: RiskResponse }) {
             : `Not estimable — ${unavailableText(presence.unavailable_reason)}`}
       </div>
       {reported && (
-        <dl className="origin__meta" style={{ marginTop: 8 }}>
+        <dl className="kv" style={{ marginTop: 8 }}>
           <div>
             <dt>Confirmed cases</dt>
             <dd>{formatCount(presence.cases_confirmed?.value ?? null)}</dd>
@@ -72,12 +72,12 @@ function PresenceCard({ risk }: { risk: RiskResponse }) {
 
 function OriginRow({ origin }: { origin: OriginContribution }) {
   return (
-    <li className="origin">
-      <div className="origin__head">
-        <span className="origin__name">{origin.origin_name}</span>
-        <span className="origin__share">{formatPercent(origin.share_of_total, 0)} of rate</span>
+    <li className="row">
+      <div className="row__top">
+        <span className="row__name">{origin.origin_name}</span>
+        <span className="row__aside">{formatPercent(origin.share_of_total, 0)} of rate</span>
       </div>
-      <dl className="origin__meta">
+      <dl className="kv">
         <div>
           <dt>Passengers</dt>
           <dd>
@@ -129,8 +129,8 @@ export function RiskPanel({ risk }: { risk: RiskResponse }) {
 
   return (
     <>
-      <div className="panel__section">
-        <h2 className="panel__heading">
+      <div className="sec">
+        <h2 className="sec__title">
           {risk.destination_name}
           <span style={{ color: 'var(--text-faint)', fontWeight: 400, textTransform: 'none' }}>
             {pathogen.label}
@@ -143,7 +143,7 @@ export function RiskPanel({ risk }: { risk: RiskResponse }) {
         </p>
       </div>
 
-      <div className="panel__section">
+      <div className="sec">
         <PresenceCard risk={risk} />
 
         <MetricCard
@@ -178,8 +178,8 @@ export function RiskPanel({ risk }: { risk: RiskResponse }) {
       </div>
 
       {importation.top_origins.length > 0 && (
-        <div className="panel__section">
-          <h2 className="panel__heading">Where the risk comes from</h2>
+        <div className="sec">
+          <h2 className="sec__title">Where the risk comes from</h2>
           <ul className="list">
             {importation.top_origins.map((origin) => (
               <OriginRow key={origin.origin_iso3} origin={origin} />
@@ -189,8 +189,8 @@ export function RiskPanel({ risk }: { risk: RiskResponse }) {
       )}
 
       {importation.excluded_origins.length > 0 && (
-        <div className="panel__section">
-          <h2 className="panel__heading">Origins that could not be used</h2>
+        <div className="sec">
+          <h2 className="sec__title">Origins that could not be used</h2>
           <table className="table">
             <thead>
               <tr>
@@ -211,8 +211,8 @@ export function RiskPanel({ risk }: { risk: RiskResponse }) {
       )}
 
       {risk.scenario_markers.length > 0 && (
-        <div className="panel__section">
-          <h2 className="panel__heading">
+        <div className="sec">
+          <h2 className="sec__title">
             Scenario thresholds
             <ValueTypeBadge valueType="scenario" />
           </h2>
@@ -235,14 +235,14 @@ export function RiskPanel({ risk }: { risk: RiskResponse }) {
       )}
 
       {risk.warnings.length > 0 && (
-        <div className="panel__section">
-          <h2 className="panel__heading">Caveats</h2>
+        <div className="sec">
+          <h2 className="sec__title">Caveats</h2>
           <Warnings warnings={risk.warnings} />
         </div>
       )}
 
-      <div className="panel__section">
-        <h2 className="panel__heading">Assumptions behind these numbers</h2>
+      <div className="sec">
+        <h2 className="sec__title">Assumptions behind these numbers</h2>
         <div>
           {risk.assumptions.map((assumption) => (
             <div className="assumption" key={assumption.key}>
@@ -261,8 +261,8 @@ export function RiskPanel({ risk }: { risk: RiskResponse }) {
       </div>
 
       {pathogen.references.length > 0 && (
-        <div className="panel__section">
-          <h2 className="panel__heading">Parameter references</h2>
+        <div className="sec">
+          <h2 className="sec__title">Parameter references</h2>
           <ul className="list" style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
             {pathogen.references.map((reference) => (
               <li key={reference} style={{ marginBottom: 5 }}>

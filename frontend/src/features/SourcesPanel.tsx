@@ -11,8 +11,8 @@ interface Props {
 export function SourcesPanel({ sources, gravity, runs }: Props) {
   return (
     <>
-      <div className="panel__section">
-        <h2 className="panel__heading">What each label means</h2>
+      <div className="sec">
+        <h2 className="sec__title">What each label means</h2>
         <ValueTypeLegend />
         <p className="metric__basis" style={{ marginTop: 8 }}>
           Labels are also distinguished by shape, not colour alone.
@@ -20,8 +20,8 @@ export function SourcesPanel({ sources, gravity, runs }: Props) {
       </div>
 
       {gravity && (
-        <div className="panel__section">
-          <h2 className="panel__heading">Passenger-flow model</h2>
+        <div className="sec">
+          <h2 className="sec__title">Passenger-flow model</h2>
           <p style={{ margin: '0 0 8px', fontSize: 12, color: 'var(--text-muted)' }}>
             Fitted {relativeAge(gravity.fitted_at)} on {gravity.training_source}
             {gravity.training_period ? ` (${gravity.training_period})` : ''}.
@@ -76,8 +76,8 @@ export function SourcesPanel({ sources, gravity, runs }: Props) {
         </div>
       )}
 
-      <div className="panel__section">
-        <h2 className="panel__heading">Data sources</h2>
+      <div className="sec">
+        <h2 className="sec__title">Data sources</h2>
         {sources.map((source) => (
           <details key={source.key} style={{ marginBottom: 8 }}>
             <summary style={{ cursor: 'pointer', fontSize: 12.5 }}>
@@ -116,8 +116,8 @@ export function SourcesPanel({ sources, gravity, runs }: Props) {
       </div>
 
       {runs.length > 0 && (
-        <div className="panel__section">
-          <h2 className="panel__heading">Ingestion history</h2>
+        <div className="sec">
+          <h2 className="sec__title">Ingestion history</h2>
           <table className="table">
             <thead>
               <tr>

@@ -16,8 +16,8 @@ export function ScenarioControls({ state, onChange, pathogens, establishmentEsti
   };
 
   return (
-    <div className="panel__section">
-      <h2 className="panel__heading">
+    <div className="sec">
+      <h2 className="sec__title">
         Model assumptions
         <ValueTypeBadge valueType="scenario" />
       </h2>
@@ -26,8 +26,8 @@ export function ScenarioControls({ state, onChange, pathogens, establishmentEsti
         them cannot change whether cases have been reported.
       </p>
 
-      <div className="field" style={{ marginBottom: 14 }}>
-        <label className="field__label" htmlFor="pathogen-select">
+      <div className="ctrl" style={{ marginBottom: 14 }}>
+        <label className="ctrl__label" htmlFor="pathogen-select">
           Pathogen profile
         </label>
         <select
@@ -201,7 +201,7 @@ export function ScenarioControls({ state, onChange, pathogens, establishmentEsti
 
       <button
         type="button"
-        className="button"
+        className="btn"
         onClick={() => {
           onChange({ ...DEFAULT_SCENARIO, pathogen: state.pathogen });
         }}

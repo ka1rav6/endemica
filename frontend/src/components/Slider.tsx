@@ -25,12 +25,12 @@ export function Slider({
 }: Props) {
   const display = format ? format(value) : String(value);
   return (
-    <div className="slider">
-      <div className="slider__head">
-        <label className="slider__label" htmlFor={id}>
+    <div className="ctrl">
+      <div className="ctrl__top">
+        <label className="ctrl__label" htmlFor={id}>
           {label}
         </label>
-        <output className="slider__value" htmlFor={id}>
+        <output className="ctrl__value" htmlFor={id}>
           {display}
         </output>
       </div>
@@ -48,7 +48,7 @@ export function Slider({
         aria-describedby={hint ? `${id}-hint` : undefined}
       />
       {hint && (
-        <p className="slider__hint" id={`${id}-hint`}>
+        <p className="ctrl__note" id={`${id}-hint`}>
           {hint}
         </p>
       )}

@@ -7,7 +7,7 @@ export function Warnings({ warnings }: { warnings: ResponseWarning[] }) {
   return (
     <ul className="list" aria-label="Caveats for these numbers">
       {sorted.map((warning, index) => (
-        <li key={`${warning.code}-${index}`} className={`warning warning--${warning.severity}`}>
+        <li key={`${warning.code}-${index}`} className={`warn warn--${warning.severity}`}>
           <strong
             style={{
               flex: 'none',
