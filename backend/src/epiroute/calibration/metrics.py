@@ -52,8 +52,22 @@ def calibration_line(labels: np.ndarray, predicted: np.ndarray) -> tuple[float, 
         return float("nan"), float("nan")
     x = np.array(xs)
     y = np.array(ys)
-    slope, intercept = np.polyfit(x, y, 1)
-    return float(slope), float(intercept)
+    # Centre before fitting. The logits span tens of units here, so the raw
+    # Vandermonde matrix is ill-conditioned and numpy says so on every call;
+    # centring removes the conditioning problem rather than the warning, and
+    # the intercept is then put back where it belongs.
+    centre = float(np.mean(x))
+    shifted_x = x - centre
+    # A constant forecast puts every bin at the same predicted logit, so there
+    # is no line to fit through them. That is not a failure of the model, it is
+    # a model with no ranking in it, and the right answer is no slope.
+    if float(np.ptp(shifted_x)) < 1e-9:
+        return float("nan"), float("nan")
+    try:
+        slope, shifted = np.polyfit(shifted_x, y, 1)
+    except np.linalg.LinAlgError:
+        return float("nan"), float("nan")
+    return float(slope), float(shifted - slope * centre)
 
 
 def spearman(left: np.ndarray, right: np.ndarray) -> float:
@@ -75,3 +89,19 @@ def top_k_recall(labels: np.ndarray, predicted: np.ndarray, k: int = 20) -> floa
         return float("nan")
     chosen = np.argsort(predicted)[::-1][:k]
     return float(np.sum(labels[chosen] == 1) / positives)
+
+
+def top_k_precision(labels: np.ndarray, predicted: np.ndarray, k: int = 20) -> float:
+    """Share of the ``k`` highest-ranked rows that did report within the horizon.
+
+    ``top_k_recall`` was being gated at 0.5, which no model could ever reach:
+    with 642 positives in a fold, twenty rows can recover at most 3% of them,
+    so the gate failed on arithmetic rather than on performance. Precision is
+    the question that was meant - of the countries we would have warned about,
+    how many were right - and it is attainable.
+    """
+    if len(predicted) == 0:
+        return float("nan")
+    size = min(k, len(predicted))
+    chosen = np.argsort(predicted)[::-1][:size]
+    return float(np.sum(labels[chosen] == 1) / size)

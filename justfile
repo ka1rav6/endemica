@@ -371,9 +371,13 @@ model-report:
 labels-build:
     "{{ py }}" -m epiroute.cli labels-build
 
-# Fit the next-country hazard and write data/processed/model_card.json.
-train-model:
-    "{{ py }}" -m epiroute.cli train-model
+# Fit the next-country hazard, write the model card and MODEL_EVALUATION.md.
+train-model *args:
+    "{{ py }}" -m epiroute.cli train-model {{ args }}
+
+# Print the full model evaluation report.
+model-evaluation:
+    "{{ py }}" -m epiroute.cli model-report --evaluation
 
 # Print the model card and exit non-zero when it is not validated.
 validate-model:

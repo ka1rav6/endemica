@@ -1,0 +1,14 @@
+{
+  "rows": 4818,
+  "positives": 976,
+  "weeks_per_outbreak": 16,
+  "horizon_days": 28,
+  "alpha": 0.5,
+  "underreporting": 4.0,
+  "flow_era": {
+    "covid_2020": "current_table_observed_and_estimated",
+    "mpox_2022": "current_table_observed_and_estimated"
+  },
+  "zero_rate_share": 0.06973848069738481,
+  "observed_passenger_share_mean": 0.0974339566179518
+}

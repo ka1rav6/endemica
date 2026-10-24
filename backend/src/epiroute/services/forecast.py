@@ -1,15 +1,42 @@
-"""Which countries that have not reported yet are most likely to report next."""
+"""Which countries that have not reported yet are most likely to report next.
+
+The fitted model used to be unreachable from here. Serving looked up the
+leave-one-out fold whose held-out outbreak matched the live one, which exists
+only for COVID-19 and mpox, and the card itself was never written on a fresh
+checkout because building the panel needed Eurostat downloads that
+``data-fetch`` does not perform. Every disease in the app therefore got
+``1 - exp(-lambda * 28)``, which scores AUC 0.54 and 0.62 on the two held-out
+outbreaks against the model's 0.78 and 0.77.
+
+Now the card carries one coefficient vector fitted on the whole panel and this
+module serves it to every disease, with three things kept honest about it:
+
+* the status says what the evidence supports - a calibrated probability, an
+  ordering with an indicative level, or nothing;
+* the band comes from refitting without each outbreak, so it is the spread
+  between a model that never saw COVID-19 and one that never saw mpox;
+* a destination with no arriving passengers from any affected country gets no
+  number at all, because the curve would return its intercept there and an
+  intercept is not a finding about that country.
+"""
 
 from __future__ import annotations
 
 from collections import defaultdict
+from dataclasses import asdict, dataclass
 from datetime import timedelta
 
 import numpy as np
 from sqlalchemy.orm import Session
 
-from epiroute.calibration.hazard import HazardCoefficients, probability
-from epiroute.calibration.train import calibration_status, load_card
+from epiroute.calibration.features import HORIZON_DAYS, FeatureRow, design_matrix
+from epiroute.calibration.hazard import cloglog_probability
+from epiroute.calibration.train import (
+    band_coefficients,
+    calibration_status,
+    load_card,
+    served_coefficients,
+)
 from epiroute.core.clock import utc_now
 from epiroute.epidemiology import prevalence as prev
 from epiroute.repositories import outbreaks as outbreak_repo
@@ -22,6 +49,13 @@ from epiroute.services.risk import (
     _resolve_focus,
 )
 
+# The outbreaks the panel was built from. A live outbreak of one of these is
+# the only case where the model is scoring a pathogen it has actually seen, and
+# the card's status is reported as-is. Anything else is a transfer, which the
+# response says so that the reader is not told a held-out number is a fitted
+# one.
+PANEL_OUTBREAKS = {"covid_19": "covid_2020", "mpox": "mpox_2022"}
+
 
 def rank_next_countries(
     session: Session,
@@ -32,7 +66,7 @@ def rank_next_countries(
     """Rank destinations by the chance of a first report within the horizon.
 
     Origins are computed once. Each destination then receives the flows that
-    leave those origins. Countries that already have a report are left off the list.
+    leave those origins. Countries that already have a report are left off.
     """
     moment = query.as_of or utc_now()
     anchor = reference_repo.list_countries(session)
@@ -62,74 +96,160 @@ def rank_next_countries(
     sigma = query.sigma
 
     rates: dict[str, float] = defaultdict(float)
+    inbound: dict[str, float] = defaultdict(float)
     for flow in reference_repo.all_flows(session):
         prevalence = origin_prevalence.get(flow.origin_iso3)
         if prevalence is None or flow.dest_iso3 in origin_prevalence:
             continue
         rates[flow.dest_iso3] += prevalence * flow.passengers_per_day * origin_alpha * (1.0 - sigma)
+        inbound[flow.dest_iso3] += flow.passengers_per_day
 
-    status = calibration_status()
-    card = load_card()
-    ranked: list[dict[str, object]] = []
+    # The affected count is a feature of the whole outbreak, not of a
+    # destination, and is the observable that replaced the per-outbreak
+    # intercept the model used to need.
+    affected_count = len(origin_prevalence)
+    model = _Model.load(query.horizon_days, focus_key=profile.key)
+
+    scored: list[_Ranked] = []
     for iso3, rate in rates.items():
         country = reference_repo.get_country(session, iso3)
-        population = country.population if country and country.population else 10_000_000
-        outbreak = {"covid_19": "covid_2020", "mpox": "mpox_2022"}.get(profile.key or "")
-        if outbreak is None:
-            status = "not_validated"
-        chance = _chance(rate, population, query.horizon_days, status, card, outbreak=outbreak)
-        ranked.append(
-            {
-                "iso3": iso3,
-                "name": country.name if country else iso3,
-                "probability": chance,
-                "arrival_rate_per_day": rate,
-            }
+        row = FeatureRow(
+            arrival_rate_per_day=rate,
+            inbound_passengers_per_day=inbound[iso3],
+            affected_country_count=affected_count,
         )
-    ranked.sort(key=lambda row: float(row["probability"]), reverse=True)
+        central, low, high, basis = model.predict(row, query.horizon_days)
+        scored.append(
+            _Ranked(
+                iso3=iso3,
+                name=country.name if country else iso3,
+                probability=central,
+                probability_low=low,
+                probability_high=high,
+                basis=basis,
+                arrival_rate_per_day=rate,
+                inbound_passengers_per_day=inbound[iso3],
+            )
+        )
+    # A country with no answer sorts last rather than as a zero, so "we cannot
+    # say" never reads as "almost certainly not".
+    scored.sort(key=lambda entry: (entry.probability is None, -(entry.probability or 0.0)))
+    ranked = [entry.as_dict() for entry in scored]
     return {
-        "calibration_status": status,
+        "calibration_status": model.status,
+        "model_version": model.version,
         "horizon_days": query.horizon_days,
+        "affected_origin_count": affected_count,
+        "note": model.note,
         "countries": ranked[:limit],
     }
 
 
-def _chance(
-    rate: float,
-    population: int,
-    horizon: float,
-    status: str,
-    card: dict[str, object] | None,
-    *,
-    outbreak: str | None,
-) -> float:
-    """Use the fold that held this outbreak out. Anything else stays uncalibrated.
+@dataclass(frozen=True, slots=True)
+class _Ranked:
+    iso3: str
+    name: str
+    probability: float | None
+    probability_low: float | None
+    probability_high: float | None
+    basis: str
+    arrival_rate_per_day: float
+    inbound_passengers_per_day: float
 
-    The fit is for a 28-day horizon. A different horizon is not that model.
-    """
-    uncalibrated = float(1.0 - np.exp(-rate * horizon))
-    if status != "calibrated" or card is None or horizon != 28.0 or outbreak is None:
-        return uncalibrated
-    folds = card.get("folds")
-    if not isinstance(folds, list):
-        return uncalibrated
-    match = next(
-        (
-            fold
-            for fold in folds
-            if isinstance(fold, dict)
-            and fold.get("held_out") == outbreak
-            and not fold.get("skipped")
-        ),
-        None,
-    )
-    if not isinstance(match, dict) or "serve_b0" not in match:
-        return uncalibrated
-    b1 = match.get("serve_b1")
-    g = match.get("serve_g")
-    if not isinstance(b1, (int, float)) or not isinstance(g, (int, float)) or b1 < 0:
-        return uncalibrated
-    log_lambda = np.array([np.log(max(rate, 1e-12))])
-    log_population = np.array([np.log10(population)])
-    coefficients = HazardCoefficients(float(match["serve_b0"]), float(b1), float(g))
-    return float(probability(coefficients, log_lambda, log_population, horizon)[0])
+    def as_dict(self) -> dict[str, object]:
+        return asdict(self)
+
+
+class _Model:
+    """The served coefficients, or the fallback arithmetic, with a note saying which."""
+
+    def __init__(
+        self,
+        beta: np.ndarray | None,
+        band: list[np.ndarray],
+        status: str,
+        version: str,
+        note: str,
+    ) -> None:
+        self._beta = beta
+        self._band = band
+        self.status = status
+        self.version = version
+        self.note = note
+
+    @classmethod
+    def load(cls, horizon_days: float, *, focus_key: str | None) -> _Model:
+        card = load_card()
+        status = calibration_status()
+        if card is None or status == "not_validated":
+            return cls(
+                None,
+                [],
+                "not_validated",
+                "uncalibrated-poisson",
+                "No validated model card on this checkout. Showing 1 - exp(-rate * "
+                "horizon), which is the arrival-rate arithmetic with nothing fitted. "
+                "Run just train-model.",
+            )
+        if horizon_days != HORIZON_DAYS:
+            return cls(
+                None,
+                [],
+                "not_validated",
+                "uncalibrated-poisson",
+                f"The model is fitted for a {int(HORIZON_DAYS)}-day horizon and this "
+                f"request asked for {horizon_days:g} days. A different horizon is a "
+                "different model, so the arrival-rate arithmetic is shown instead.",
+            )
+        beta = served_coefficients(card)
+        if beta is None:
+            return cls(
+                None,
+                [],
+                "not_validated",
+                "uncalibrated-poisson",
+                "The model card does not carry usable coefficients. Showing the "
+                "arrival-rate arithmetic instead.",
+            )
+        version = str(card.get("model_version") or "hazard")
+        in_panel = focus_key in PANEL_OUTBREAKS
+        if status == "calibrated" and in_panel:
+            note = (
+                "Fitted probability for a pathogen in the training panel, with both "
+                "the ordering and the level validated on a held-out outbreak."
+            )
+        elif status == "calibrated":
+            note = (
+                "Fitted probability, transferred to a pathogen outside the training "
+                "panel. The ordering and the level were validated on held-out "
+                "outbreaks, but not on this one."
+            )
+        else:
+            note = (
+                "The ordering is validated on both held-out outbreaks; the absolute "
+                "level is not, because the two differ threefold in base rate. Read "
+                "the order, treat the percentage as indicative, and see the band."
+            )
+            if not in_panel:
+                note += " This pathogen is not in the training panel."
+        return cls(beta, band_coefficients(card), status, version, note)
+
+    def predict(
+        self, row: FeatureRow, horizon_days: float
+    ) -> tuple[float | None, float | None, float | None, str]:
+        if not row.has_evidence:
+            # No passengers arrive here from anywhere that has reported. The
+            # fitted curve would return its intercept, which says nothing about
+            # this country, so the answer is that there is no answer.
+            return None, None, None, "no_inbound_travel_from_affected_countries"
+        if self._beta is None:
+            rate = max(row.arrival_rate_per_day, 0.0)
+            return float(1.0 - np.exp(-rate * horizon_days)), None, None, "uncalibrated_rate"
+        design = design_matrix([row])
+        central = float(cloglog_probability(design, self._beta, horizon_days)[0])
+        bounds = [
+            float(cloglog_probability(design, vector, horizon_days)[0]) for vector in self._band
+        ]
+        low = min(bounds) if bounds else None
+        high = max(bounds) if bounds else None
+        return central, low, high, "fitted_hazard"

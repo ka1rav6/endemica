@@ -1,113 +1,190 @@
-"""Fit the hazard on one outbreak and score it on the other."""
+"""Fit the served model, score it on outbreaks it has not seen, and write both down.
+
+Two artefacts come out of one run and they have different jobs. The card in
+``data/processed/model_card.json`` is what the API reads: the coefficients it
+serves, the band around them, and the strongest claim the evidence supports.
+``MODEL_EVALUATION.md`` in the repository root is what a person reads, and it
+is rewritten from scratch every time, so a number in it is never older than the
+coefficients beside it.
+"""
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import asdict
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
 
 import numpy as np
 import pandas as pd
 
-from epiroute.calibration.gates import all_passed, evaluate_gates
-from epiroute.calibration.hazard import HazardCoefficients, fit_b0_by_outbreak, probability
+from epiroute.calibration import report as report_module
+from epiroute.calibration.evaluate import (
+    CANDIDATES,
+    baseline_predictions,
+    evaluate_baselines,
+    evaluate_candidate,
+    leave_one_outbreak_out,
+)
+from epiroute.calibration.features import (
+    FEATURE_NAMES,
+    HORIZON_DAYS,
+    design_from_panel,
+    monotone_columns,
+)
+from epiroute.calibration.gates import GateResult, evaluate_gates, status_from_gates
+from epiroute.calibration.hazard import cloglog_probability, fit_cloglog
 from epiroute.calibration.labels import labels_dir
-from epiroute.calibration.metrics import brier
 from epiroute.core.config import Settings, get_settings
 
+MODEL_VERSION = "hazard-cloglog-2"
+SERVED_MODEL = "hazard"
 
-def _matrix(frame: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    log_lambda = np.log(np.clip(frame["lambda"].to_numpy(dtype=float), 1e-12, None))
-    log_population = frame["log_population"].to_numpy(dtype=float)
-    labels = frame["label"].to_numpy(dtype=float)
-    outbreaks = frame["outbreak"].to_numpy(dtype=str)
-    return outbreaks, log_lambda, log_population, labels
+
+def _panel(settings: Settings) -> pd.DataFrame:
+    panel = pd.read_parquet(labels_dir(settings) / "panel.parquet")
+    panel["forecast_at"] = pd.to_datetime(panel["forecast_at"])
+    panel["latest_input_at"] = pd.to_datetime(panel["latest_input_at"])
+    return panel
 
 
 def train(settings: Settings | None = None) -> Path:
-    """Leave one outbreak out. The card is written either way; passing is separate."""
+    """Write the card and the report. The card is written whether or not it passed."""
     settings = settings or get_settings()
-    panel = pd.read_parquet(labels_dir(settings) / "panel.parquet")
-    panel["forecast_at"] = pd.to_datetime(panel["forecast_at"])
-    outbreaks = sorted(panel["outbreak"].unique())
-    folds: list[dict[str, object]] = []
-    intercepts: dict[str, float] = {}
-    slope = 1.0
-    population_slope = 0.0
+    panel = _panel(settings)
 
-    for held_out in outbreaks:
-        train_frame = panel[panel["outbreak"] != held_out]
-        test_frame = panel[panel["outbreak"] == held_out]
-        if train_frame.empty or test_frame.empty or train_frame["label"].sum() == 0:
-            folds.append({"held_out": held_out, "skipped": True})
-            continue
-        train_outbreaks, train_lambda, train_population, train_labels = _matrix(train_frame)
-        fitted_intercepts, slope, population_slope = fit_b0_by_outbreak(
-            train_outbreaks,
-            train_lambda,
-            train_population,
-            train_labels,
-            horizon_days=28.0,
+    fold_coefficients: dict[str, list[float]] = {}
+    gates: dict[str, list[GateResult]] = {}
+    for name, train_frame, test_frame in leave_one_outbreak_out(panel):
+        _guard_fold(train_frame, test_frame, name)
+        beta = fit_cloglog(
+            design_from_panel(train_frame),
+            train_frame["label"].to_numpy(dtype=float),
+            horizon_days=HORIZON_DAYS,
+            monotone_columns=monotone_columns(),
         )
-        intercepts.update(fitted_intercepts)
-        _test_outbreaks, test_lambda, test_population, test_labels = _matrix(test_frame)
-        b0 = float(np.median(list(fitted_intercepts.values())))
-        _guard_fold(train_frame, test_frame, held_out)
-        coefficients = HazardCoefficients(b0, slope, population_slope)
-        predicted = probability(coefficients, test_lambda, test_population, 28.0)
-        uncalibrated = 1.0 - np.exp(-np.exp(test_lambda) * 28.0)
-        simple = 1.0 - np.exp(-test_frame["inbound_passengers"].to_numpy(dtype=float) / 1.0e5)
-        simple = np.clip(simple, 0.0, 1.0)
-        arrival = test_frame["arrival_day"].to_numpy(dtype=float)
-        gates = evaluate_gates(
-            labels=test_labels,
+        predicted = cloglog_probability(design_from_panel(test_frame), beta, HORIZON_DAYS)
+        baselines = baseline_predictions(train_frame, test_frame)
+        fold_coefficients[name] = [float(value) for value in beta]
+        gates[name] = evaluate_gates(
+            labels=test_frame["label"].to_numpy(dtype=float),
             predicted=predicted,
-            uncalibrated=uncalibrated,
-            best_simple=simple,
-            arrival_day=arrival,
-            monotone=slope >= 0,
-        )
-        folds.append(
-            {
-                "held_out": held_out,
-                "skipped": False,
-                "brier": brier(test_labels, predicted),
-                "serve_b0": b0,
-                "serve_b1": slope,
-                "serve_g": population_slope,
-                "gates": [asdict(gate) for gate in gates],
-                "passed": all_passed(gates),
-            }
+            uncalibrated=baselines["uncalibrated_poisson"],
+            best_simple=baselines["inbound_passengers_only"],
+            arrival_day=test_frame["arrival_day"].to_numpy(dtype=float),
+            monotone=all(value >= 0 for value in beta[1:3]),
         )
 
-    scored = [fold for fold in folds if not fold.get("skipped")]
-    # all([]) is True in Python. A card with only skipped folds has not been tested.
-    passed = (
-        len(scored) >= 2 and all(bool(fold.get("passed")) for fold in scored) and bool(intercepts)
+    status = status_from_gates(list(gates.values()))
+
+    # The served coefficients are fitted on the whole panel. The folds above are
+    # the evidence that a model fitted this way generalises; the fit that is
+    # served should then use every row of evidence there is. Serving one fold's
+    # coefficients, which is what the previous version did, meant the app could
+    # only answer for the outbreak that fold held out.
+    served = fit_cloglog(
+        design_from_panel(panel),
+        panel["label"].to_numpy(dtype=float),
+        horizon_days=HORIZON_DAYS,
+        monotone_columns=monotone_columns(),
     )
-    card = {
-        "passed": passed,
-        "status": "calibrated" if passed else "not_validated",
-        "b1": slope,
-        "g": population_slope,
-        "b0_by_outbreak": intercepts,
-        "folds": folds,
-        "claim": (
-            "Held-out chance that a country reports its first case within 28 days, "
-            "for the outbreaks in this card. Not a forecast for a new pathogen."
-        ),
+
+    evaluations = [evaluate_candidate(candidate, panel) for candidate in CANDIDATES]
+    served_evaluation = next(
+        evaluation for evaluation in evaluations if evaluation.model == SERVED_MODEL
+    )
+    ablations = [evaluation for evaluation in evaluations if evaluation.model != SERVED_MODEL]
+
+    panel_sha = _sha256(labels_dir(settings) / "panel.parquet")
+    provenance = _provenance(settings, panel)
+    coefficients = dict(
+        zip(("intercept", *FEATURE_NAMES), (float(value) for value in served), strict=True)
+    )
+
+    card: dict[str, object] = {
+        "model_version": MODEL_VERSION,
+        "status": status,
+        "trained_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        "horizon_days": HORIZON_DAYS,
+        "feature_names": list(FEATURE_NAMES),
+        "coefficients": coefficients,
+        "served_beta": [float(value) for value in served],
+        # The band is the two folds' coefficient vectors. A destination's low
+        # and high are what this model would have said about it had it never
+        # seen COVID-19, and had it never seen mpox. That is a statement about
+        # which outbreaks the fit happens to rest on, which is the dominant
+        # uncertainty here, and it is not a confidence interval.
+        "band_beta": dict(sorted(fold_coefficients.items())),
+        "gates": {name: [asdict(result) for result in results] for name, results in gates.items()},
+        "panel_sha256": panel_sha,
+        "panel_provenance": provenance,
+        "claim": _claim(status),
+        "report": report_module.REPORT_NAME,
     }
-    boosted = _maybe_boosted(panel)
-    if boosted is not None:
-        card["boosted"] = boosted
-        # The app serves the hazard. A boosted model is recorded, not substituted,
-        # because a single fit on every outbreak would see the held-out one.
-        card["boosted_shipped"] = False
-    card["panel_sha256"] = _sha256(labels_dir(settings) / "panel.parquet")
+    challenger = _challenger(panel)
+    if challenger is not None:
+        card["challenger"] = challenger
+
     target = settings.processed_data_dir / "model_card.json"
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(card, indent=2, default=str), encoding="utf-8")
+
+    report_module.write(
+        report_module.ReportInput(
+            served=served_evaluation,
+            ablations=ablations,
+            baselines=evaluate_baselines(panel),
+            challenger=challenger,
+            gravity=_gravity(settings),
+            panel_provenance=provenance,
+            panel_sha256=panel_sha,
+            status=status,
+            gates={name: [asdict(result) for result in results] for name, results in gates.items()},
+            coefficients=coefficients,
+            horizon_days=HORIZON_DAYS,
+        )
+    )
     return target
+
+
+def _claim(status: str) -> str:
+    if status == "calibrated":
+        return (
+            "Held-out chance that a country reports its first case within 28 days. "
+            "Both the ordering and the level passed on an outbreak the fit had not seen."
+        )
+    if status == "ranking_validated":
+        return (
+            "Held-out ordering of which countries report next within 28 days. The "
+            "ordering passed on both outbreaks the fit had not seen; the absolute "
+            "level did not, so the number is indicative and the band is wide."
+        )
+    return (
+        "Not validated. The app falls back to the uncalibrated arrival-rate arithmetic and says so."
+    )
+
+
+def _provenance(settings: Settings, panel: pd.DataFrame) -> dict[str, object]:
+    path = labels_dir(settings) / "panel_provenance.json"
+    if path.exists():
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(loaded, dict):
+            return loaded
+    return {
+        "rows": len(panel),
+        "positives": int(panel["label"].sum()),
+        "zero_rate_share": float((panel["lambda"] <= 0).mean()),
+    }
+
+
+def _gravity(settings: Settings) -> dict[str, object] | None:
+    path = settings.processed_data_dir / "gravity_fit.json"
+    if not path.exists():
+        return None
+    loaded = json.loads(path.read_text(encoding="utf-8"))
+    return loaded if isinstance(loaded, dict) else None
 
 
 def _guard_fold(train_frame: pd.DataFrame, test_frame: pd.DataFrame, held_out: str) -> None:
@@ -118,20 +195,24 @@ def _guard_fold(train_frame: pd.DataFrame, test_frame: pd.DataFrame, held_out: s
     )
 
     class _Row:
-        def __init__(self, forecast_at: object, latest_input_at: object, outbreak: str) -> None:
+        def __init__(self, forecast_at: datetime, latest_input_at: datetime, outbreak: str) -> None:
             self.forecast_at = forecast_at
             self.latest_input_at = latest_input_at
             self.outbreak = outbreak
 
-    rows = [
-        _Row(row.forecast_at, row.latest_input_at, str(row.outbreak))
+    rows: list[_Row] = [
+        _Row(
+            cast("datetime", row.forecast_at),
+            cast("datetime", row.latest_input_at),
+            str(row.outbreak),
+        )
         for row in test_frame.itertuples(index=False)
     ]
     assert_inputs_not_after_forecast(rows)
     assert_outbreaks_disjoint(list(train_frame["outbreak"].unique()), [held_out])
 
 
-def _maybe_boosted(panel: pd.DataFrame) -> dict[str, object] | None:
+def _challenger(panel: pd.DataFrame) -> dict[str, object] | None:
     try:
         from epiroute.calibration.boosted import compare_to_hazard
     except ImportError:
@@ -140,8 +221,6 @@ def _maybe_boosted(panel: pd.DataFrame) -> dict[str, object] | None:
 
 
 def _sha256(path: Path) -> str | None:
-    import hashlib
-
     if not path.exists():
         return None
     return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -157,10 +236,48 @@ def load_card(settings: Settings | None = None) -> dict[str, object] | None:
 
 
 def calibration_status(settings: Settings | None = None) -> str:
+    """The card's status, but only while the card still matches the panel on disk."""
     card = load_card(settings)
-    if card is None or card.get("status") != "calibrated":
+    if card is None:
+        return "not_validated"
+    status = card.get("status")
+    if status not in ("calibrated", "ranking_validated"):
         return "not_validated"
     settings = settings or get_settings()
     if card.get("panel_sha256") != _sha256(labels_dir(settings) / "panel.parquet"):
         return "not_validated"
-    return "calibrated"
+    return str(status)
+
+
+def served_coefficients(card: dict[str, object]) -> np.ndarray | None:
+    """The coefficient vector the card says to serve, or ``None`` if it is unusable."""
+    beta = card.get("served_beta")
+    if not isinstance(beta, list) or len(beta) != 1 + len(FEATURE_NAMES):
+        return None
+    try:
+        values = np.array([float(value) for value in beta], dtype=float)
+    except (TypeError, ValueError):
+        return None
+    if not np.all(np.isfinite(values)):
+        return None
+    # The two travel terms are constrained non-negative when fitted. A card
+    # that says otherwise was not written by this code and is not served.
+    return values if values[1] >= 0 and values[2] >= 0 else None
+
+
+def band_coefficients(card: dict[str, object]) -> list[np.ndarray]:
+    """One coefficient vector per held-out refit, for the low and high bounds."""
+    band = card.get("band_beta")
+    if not isinstance(band, dict):
+        return []
+    out: list[np.ndarray] = []
+    for values in band.values():
+        if not isinstance(values, list) or len(values) != 1 + len(FEATURE_NAMES):
+            continue
+        try:
+            vector = np.array([float(value) for value in values], dtype=float)
+        except (TypeError, ValueError):
+            continue
+        if np.all(np.isfinite(vector)):
+            out.append(vector)
+    return out

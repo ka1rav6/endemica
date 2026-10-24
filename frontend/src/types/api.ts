@@ -290,13 +290,22 @@ export interface RiskResponse {
 export interface NextCountry {
   iso3: string;
   name: string;
-  probability: number;
+  /** Null where no passengers arrive from any affected country, so the model has nothing to go on. */
+  probability: number | null;
+  probability_low: number | null;
+  probability_high: number | null;
+  basis: string;
   arrival_rate_per_day: number;
+  inbound_passengers_per_day: number;
 }
 
 export interface NextCountriesResponse {
+  /** 'calibrated', 'ranking_validated' or 'not_validated'. */
   calibration_status: string;
+  model_version: string;
   horizon_days: number;
+  affected_origin_count: number;
+  note: string;
   countries: NextCountry[];
 }
 

@@ -126,6 +126,17 @@ function OriginRow({ origin }: { origin: OriginContribution }) {
 // the parameter references - lives on the Assumptions and Sources tabs, which
 // is where someone auditing the numbers goes anyway.
 const TOP_ORIGINS = 3;
+
+// Three states, because the evidence has three. The ordering held up on both
+// held-out outbreaks and the absolute level did not, so saying only
+// "calibrated or not" would either overclaim the percentage or throw away a
+// ranking that beats the arithmetic it replaces.
+const CALIBRATION_NOTE: Record<string, string> = {
+  calibrated: 'Ordering and level both validated on a held-out outbreak.',
+  ranking_validated:
+    'The ordering is validated on held-out outbreaks; the percentage is indicative, not calibrated.',
+  not_validated: 'Not validated — these are uncalibrated scenario numbers.',
+};
 const TOP_NEXT = 5;
 
 export function RiskPanel({
@@ -221,14 +232,15 @@ export function RiskPanel({
             {nextCountries.countries.slice(0, TOP_NEXT).map((country) => (
               <li key={country.iso3}>
                 <span>{country.name}</span>
-                <strong className="num">{formatPercent(country.probability)}</strong>
+                <strong className="num">
+                  {country.probability === null ? 'no answer' : formatPercent(country.probability)}
+                </strong>
               </li>
             ))}
           </ol>
           <p className="metric__basis" data-testid="calibration-status">
-            {risk.calibration_status === 'calibrated'
-              ? 'Calibrated on held-out outbreaks.'
-              : 'Not validated — these are uncalibrated scenario numbers.'}
+            {CALIBRATION_NOTE[nextCountries.calibration_status] ??
+              CALIBRATION_NOTE['not_validated']}
           </p>
         </div>
       )}

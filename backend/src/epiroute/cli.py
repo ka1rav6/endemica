@@ -239,14 +239,34 @@ def cmd_labels_build(_args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_train_model(_args: argparse.Namespace) -> int:
-    """Build the forecast panel and fit the hazard. The card says if it passed."""
+def cmd_train_model(args: argparse.Namespace) -> int:
+    """Fit the hazard, write the model card and rewrite the evaluation report.
+
+    The panel in ``data/labels`` is committed, so training works on a fresh
+    checkout and gives every checkout the same coefficients. Rebuilding it
+    needs the processed flow and population tables and is therefore opt-in;
+    it used to be unconditional, which is why ``train-model`` failed outright
+    on any machine that had not fetched Eurostat's 2019 and 2022 tables.
+    """
+    from epiroute.calibration.labels import labels_dir
     from epiroute.calibration.panel import build_panel
     from epiroute.calibration.train import train
 
-    build_panel()
+    panel = labels_dir() / "panel.parquet"
+    if args.rebuild_panel or not panel.exists():
+        reason = "asked for" if args.rebuild_panel else "missing"
+        print(f"  rebuilding the training panel ({reason})")
+        build_panel()
     card = train()
     print(f"{OK} model card written to {card}")
+
+    from epiroute.calibration.report import REPORT_NAME, repository_root
+    from epiroute.calibration.train import calibration_status, load_card
+
+    print(f"{OK} evaluation report written to {repository_root() / REPORT_NAME}")
+    stored = load_card() or {}
+    print(f"  status: {calibration_status()}")
+    print(f"  claim:  {stored.get('claim', '')}")
     return 0
 
 
@@ -450,7 +470,17 @@ def cmd_model_fit(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_model_report(_args: argparse.Namespace) -> int:
+def cmd_model_report(args: argparse.Namespace) -> int:
+    """Print the gravity-model fit, or with --evaluation the whole report file."""
+    if args.evaluation:
+        from epiroute.calibration.report import REPORT_NAME, repository_root
+
+        path = repository_root() / REPORT_NAME
+        if not path.exists():
+            print(f"{BAD} no evaluation report yet; run `just train-model`", file=sys.stderr)
+            return 1
+        print(path.read_text(encoding="utf-8"))
+        return 0
     path = get_settings().processed_data_dir / "gravity_fit.json"
     if not path.exists():
         print(f"{BAD} no gravity fit found; run `just model-fit`", file=sys.stderr)
@@ -669,7 +699,14 @@ def build_parser() -> argparse.ArgumentParser:
     p = subparsers.add_parser("labels-build", help="Download historical first-report dates.")
     p.set_defaults(func=cmd_labels_build)
 
-    p = subparsers.add_parser("train-model", help="Fit the hazard and write the model card.")
+    p = subparsers.add_parser(
+        "train-model", help="Fit the hazard, write the model card and the evaluation report."
+    )
+    p.add_argument(
+        "--rebuild-panel",
+        action="store_true",
+        help="Rebuild the training panel from the processed tables first.",
+    )
     p.set_defaults(func=cmd_train_model)
 
     p = subparsers.add_parser("validate-model", help="Show whether the model card passed.")
@@ -690,6 +727,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_model_fit)
 
     p = subparsers.add_parser("model-report", help="Print the stored gravity-model report.")
+    p.add_argument(
+        "--evaluation",
+        action="store_true",
+        help="Print MODEL_EVALUATION.md instead of the gravity fit.",
+    )
     p.set_defaults(func=cmd_model_report)
 
     p = subparsers.add_parser("ingest", help="Run a WHO Disease Outbreak News ingestion pass.")

@@ -395,6 +395,19 @@ export default function App() {
     [activeMode, activeEntries, activeSpread, yearCeiling],
   );
 
+  // The map shades an ordering, so a validated ordering is enough to draw it.
+  // Requiring a calibrated level meant the forecast layer never appeared: no
+  // disease in the app has a calibrated level, because the two training
+  // outbreaks differ threefold in base rate. Countries the model has nothing
+  // to say about are left out rather than drawn as a zero.
+  const forecastShading = useMemo(() => {
+    const status = nextCountries.data?.calibration_status;
+    if (status !== 'calibrated' && status !== 'ranking_validated') return [];
+    return (nextCountries.data?.countries ?? [])
+      .filter((country) => country.probability !== null)
+      .map((country) => ({ iso3: country.iso3, probability: country.probability as number }));
+  }, [nextCountries.data]);
+
   const originIso3 = useMemo(
     () => new Set((activeRisk?.importation.top_origins ?? []).map((origin) => origin.origin_iso3)),
     [activeRisk],
@@ -560,14 +573,7 @@ export default function App() {
             origins={activeRisk?.importation.top_origins ?? []}
             routes={relevantRoutes}
             showFlows={showFlows}
-            forecast={
-              nextCountries.data?.calibration_status === 'calibrated'
-                ? nextCountries.data.countries.map((country) => ({
-                    iso3: country.iso3,
-                    probability: country.probability,
-                  }))
-                : []
-            }
+            forecast={forecastShading}
             spreadSpan={spreadSpan}
           />
           {!activeMode && (
