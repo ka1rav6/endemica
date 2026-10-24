@@ -1,0 +1,2939 @@
+{
+  "components": {
+    "schemas": {
+      "Assumption": {
+        "description": "One assumption behind a published value, shown in the UI next to it.\n\nEvery model response carries the full list, so a user can see which numbers\nare inputs they chose and which are defaults EpiRoute supplied.",
+        "properties": {
+          "key": {
+            "description": "Stable machine name, e.g. 'alpha'.",
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "description": "Short human label, e.g. 'Boarding while infectious'.",
+            "title": "Label",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "source": {
+            "description": "Where this value came from: 'user', 'pathogen profile default', or a literature citation.",
+            "title": "Source",
+            "type": "string"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "value_type": {
+            "$ref": "#/components/schemas/ValueType",
+            "default": "scenario"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "value",
+          "source"
+        ],
+        "title": "Assumption",
+        "type": "object"
+      },
+      "BandedQuantity": {
+        "description": "A central value with a low and a high bound.\n\nThe bounds are *scenario bounds*: they come from re-running the model at\nthe low and high ends of its uncertain inputs. They are not statistically\ncalibrated confidence intervals, and :attr:`band_basis` says so in words\nthat the UI displays verbatim (AGENTS.md section 10.2).",
+        "properties": {
+          "band_basis": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How the bounds were produced, e.g. 'scenario range: under-reporting 2x-10x'. Not a confidence interval.",
+            "title": "Band Basis"
+          },
+          "central": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Central"
+          },
+          "high": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "High"
+          },
+          "low": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Low"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "unavailable_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UnavailableReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          },
+          "value_type": {
+            "$ref": "#/components/schemas/ValueType"
+          }
+        },
+        "required": [
+          "low",
+          "central",
+          "high",
+          "value_type"
+        ],
+        "title": "BandedQuantity",
+        "type": "object"
+      },
+      "ComponentHealth": {
+        "description": "Status of one subsystem the application depends on.",
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "degraded",
+              "unavailable",
+              "not_configured"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "status"
+        ],
+        "title": "ComponentHealth",
+        "type": "object"
+      },
+      "CountryListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CountryOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total"
+        ],
+        "title": "CountryListResponse",
+        "type": "object"
+      },
+      "CountryOut": {
+        "properties": {
+          "centroid_lat": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Centroid Lat"
+          },
+          "centroid_lon": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Centroid Lon"
+          },
+          "has_reported_outbreak": {
+            "default": false,
+            "title": "Has Reported Outbreak",
+            "type": "boolean"
+          },
+          "inbound_flow_count": {
+            "default": 0,
+            "title": "Inbound Flow Count",
+            "type": "integer"
+          },
+          "iso2": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Iso2"
+          },
+          "iso3": {
+            "title": "Iso3",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "population": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Population"
+          },
+          "population_year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Population Year"
+          },
+          "region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region"
+          },
+          "subregion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subregion"
+          }
+        },
+        "required": [
+          "iso3",
+          "name"
+        ],
+        "title": "CountryOut",
+        "type": "object"
+      },
+      "DataFreshness": {
+        "description": "Age and status of one data source backing a response.",
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "is_stale": {
+            "default": false,
+            "description": "True when the data is older than its documented refresh window.",
+            "title": "Is Stale",
+            "type": "boolean"
+          },
+          "record_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Record Count"
+          },
+          "retrieved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retrieved At"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "default": "ok",
+            "pattern": "^(ok|stale|missing|degraded)$",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "title": "DataFreshness",
+        "type": "object"
+      },
+      "ErrorDetail": {
+        "description": "One field-level problem within an error response.",
+        "properties": {
+          "field": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Field"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "title": "ErrorDetail",
+        "type": "object"
+      },
+      "ErrorResponse": {
+        "description": "Uniform error body.\n\nInternal exception text and stack traces are never included: ``code`` is a\nstable machine-readable string and ``message`` is written for an operator.",
+        "properties": {
+          "code": {
+            "description": "Stable error code, e.g. 'not_found'.",
+            "title": "Code",
+            "type": "string"
+          },
+          "details": {
+            "items": {
+              "$ref": "#/components/schemas/ErrorDetail"
+            },
+            "title": "Details",
+            "type": "array"
+          },
+          "message": {
+            "description": "Human-readable summary, safe to display.",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ErrorResponse",
+        "type": "object"
+      },
+      "EstablishmentRisk": {
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "dispersion_used": {
+            "$ref": "#/components/schemas/BandedQuantity"
+          },
+          "horizon_days": {
+            "title": "Horizon Days",
+            "type": "number"
+          },
+          "probability_per_introduction": {
+            "$ref": "#/components/schemas/BandedQuantity"
+          },
+          "probability_within_horizon": {
+            "$ref": "#/components/schemas/BandedQuantity"
+          },
+          "reproduction_number_used": {
+            "$ref": "#/components/schemas/BandedQuantity"
+          },
+          "subcritical": {
+            "default": false,
+            "title": "Subcritical",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "probability_per_introduction",
+          "probability_within_horizon",
+          "horizon_days",
+          "reproduction_number_used",
+          "dispersion_used",
+          "detail"
+        ],
+        "title": "EstablishmentRisk",
+        "type": "object"
+      },
+      "ExtractionMethod": {
+        "description": "Which mechanism produced a record's structured fields.",
+        "enum": [
+          "who_api_field",
+          "deterministic_parser",
+          "tinyfish_agent",
+          "tinyfish_fetch"
+        ],
+        "title": "ExtractionMethod",
+        "type": "string"
+      },
+      "ExtractionStatus": {
+        "description": "Outcome of extracting structured fields from a source document.",
+        "enum": [
+          "verified",
+          "unverified",
+          "partial",
+          "failed",
+          "not_attempted"
+        ],
+        "title": "ExtractionStatus",
+        "type": "string"
+      },
+      "GravityModelOut": {
+        "properties": {
+          "caveat": {
+            "title": "Caveat",
+            "type": "string"
+          },
+          "coefficients": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Coefficients",
+            "type": "object"
+          },
+          "fitted_at": {
+            "format": "date-time",
+            "title": "Fitted At",
+            "type": "string"
+          },
+          "intercept": {
+            "title": "Intercept",
+            "type": "number"
+          },
+          "metrics": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Metrics",
+            "type": "object"
+          },
+          "n_test": {
+            "title": "N Test",
+            "type": "integer"
+          },
+          "n_train": {
+            "title": "N Train",
+            "type": "integer"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "random_seed": {
+            "title": "Random Seed",
+            "type": "integer"
+          },
+          "residual_sigma_log10": {
+            "title": "Residual Sigma Log10",
+            "type": "number"
+          },
+          "specification": {
+            "title": "Specification",
+            "type": "string"
+          },
+          "training_period": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Training Period"
+          },
+          "training_source": {
+            "title": "Training Source",
+            "type": "string"
+          },
+          "uncertainty_factor": {
+            "title": "Uncertainty Factor",
+            "type": "number"
+          }
+        },
+        "required": [
+          "fitted_at",
+          "specification",
+          "training_source",
+          "n_train",
+          "n_test",
+          "random_seed",
+          "intercept",
+          "coefficients",
+          "metrics",
+          "residual_sigma_log10",
+          "uncertainty_factor",
+          "caveat"
+        ],
+        "title": "GravityModelOut",
+        "type": "object"
+      },
+      "GroundingFieldOut": {
+        "properties": {
+          "context": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "field": {
+            "title": "Field",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "integer"
+          },
+          "verdict": {
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "field",
+          "value",
+          "verdict",
+          "detail"
+        ],
+        "title": "GroundingFieldOut",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HealthResponse": {
+        "description": "``GET /health`` payload.\n\n``status`` is ``ok`` only when every *required* component is healthy. An\nunconfigured optional integration (TinyFish) reports\n``not_configured`` and leaves the overall status at ``ok``, because the\napplication is designed to run without it.",
+        "properties": {
+          "checked_at": {
+            "format": "date-time",
+            "title": "Checked At",
+            "type": "string"
+          },
+          "components": {
+            "items": {
+              "$ref": "#/components/schemas/ComponentHealth"
+            },
+            "title": "Components",
+            "type": "array"
+          },
+          "data": {
+            "description": "Age and record count of each loaded dataset.",
+            "items": {
+              "$ref": "#/components/schemas/DataFreshness"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "environment": {
+            "title": "Environment",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "degraded",
+              "unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "version",
+          "environment",
+          "checked_at"
+        ],
+        "title": "HealthResponse",
+        "type": "object"
+      },
+      "ImportationRisk": {
+        "properties": {
+          "arrival_rate_per_day": {
+            "$ref": "#/components/schemas/BandedQuantity"
+          },
+          "excluded_origins": {
+            "items": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "title": "Excluded Origins",
+            "type": "array"
+          },
+          "horizon_days": {
+            "title": "Horizon Days",
+            "type": "number"
+          },
+          "is_saturated": {
+            "default": false,
+            "title": "Is Saturated",
+            "type": "boolean"
+          },
+          "origin_count_considered": {
+            "default": 0,
+            "title": "Origin Count Considered",
+            "type": "integer"
+          },
+          "origin_count_usable": {
+            "default": 0,
+            "title": "Origin Count Usable",
+            "type": "integer"
+          },
+          "probability": {
+            "$ref": "#/components/schemas/BandedQuantity"
+          },
+          "top_origins": {
+            "items": {
+              "$ref": "#/components/schemas/OriginContributionOut"
+            },
+            "title": "Top Origins",
+            "type": "array"
+          }
+        },
+        "required": [
+          "probability",
+          "arrival_rate_per_day",
+          "horizon_days"
+        ],
+        "title": "ImportationRisk",
+        "type": "object"
+      },
+      "IngestRequest": {
+        "properties": {
+          "limit": {
+            "default": 20,
+            "maximum": 200.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "use_agent": {
+            "default": false,
+            "description": "Run TinyFish Agent extraction. Billed per step, so it is off by default; the deterministic parser runs either way.",
+            "title": "Use Agent",
+            "type": "boolean"
+          }
+        },
+        "title": "IngestRequest",
+        "type": "object"
+      },
+      "IngestResponse": {
+        "properties": {
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Errors",
+            "type": "array"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          },
+          "observations_created": {
+            "title": "Observations Created",
+            "type": "integer"
+          },
+          "observations_unverified": {
+            "title": "Observations Unverified",
+            "type": "integer"
+          },
+          "records_created": {
+            "title": "Records Created",
+            "type": "integer"
+          },
+          "records_seen": {
+            "title": "Records Seen",
+            "type": "integer"
+          },
+          "records_skipped": {
+            "title": "Records Skipped",
+            "type": "integer"
+          },
+          "records_updated": {
+            "title": "Records Updated",
+            "type": "integer"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "warning_codes": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Warning Codes",
+            "type": "object"
+          }
+        },
+        "required": [
+          "run_id",
+          "mode",
+          "status",
+          "records_seen",
+          "records_created",
+          "records_updated",
+          "records_skipped",
+          "observations_created",
+          "observations_unverified"
+        ],
+        "title": "IngestResponse",
+        "type": "object"
+      },
+      "IngestionRunOut": {
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          },
+          "observations_created": {
+            "default": 0,
+            "title": "Observations Created",
+            "type": "integer"
+          },
+          "observations_unverified": {
+            "default": 0,
+            "title": "Observations Unverified",
+            "type": "integer"
+          },
+          "records_created": {
+            "default": 0,
+            "title": "Records Created",
+            "type": "integer"
+          },
+          "records_seen": {
+            "default": 0,
+            "title": "Records Seen",
+            "type": "integer"
+          },
+          "records_skipped": {
+            "default": 0,
+            "title": "Records Skipped",
+            "type": "integer"
+          },
+          "records_updated": {
+            "default": 0,
+            "title": "Records Updated",
+            "type": "integer"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "trigger": {
+            "title": "Trigger",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "source",
+          "mode",
+          "trigger",
+          "status",
+          "started_at"
+        ],
+        "title": "IngestionRunOut",
+        "type": "object"
+      },
+      "LocalPresence": {
+        "properties": {
+          "cases_confirmed": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Quantity"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "deaths": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Quantity"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "last_reported_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Reported At"
+          },
+          "report_count": {
+            "default": 0,
+            "title": "Report Count",
+            "type": "integer"
+          },
+          "source_urls": {
+            "items": {
+              "format": "uri",
+              "maxLength": 2083,
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Source Urls",
+            "type": "array"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PresenceStatus"
+          },
+          "unavailable_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UnavailableReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "value_type": {
+            "$ref": "#/components/schemas/ValueType"
+          }
+        },
+        "required": [
+          "status",
+          "value_type",
+          "detail"
+        ],
+        "title": "LocalPresence",
+        "type": "object"
+      },
+      "ObservationOut": {
+        "properties": {
+          "cases_confirmed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cases Confirmed"
+          },
+          "cases_probable": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cases Probable"
+          },
+          "cases_suspected": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cases Suspected"
+          },
+          "country_iso3": {
+            "title": "Country Iso3",
+            "type": "string"
+          },
+          "country_name": {
+            "title": "Country Name",
+            "type": "string"
+          },
+          "country_name_as_reported": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country Name As Reported"
+          },
+          "deaths": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deaths"
+          },
+          "evidence_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Text"
+          },
+          "grounding_status": {
+            "$ref": "#/components/schemas/ExtractionStatus"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "period_end": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period End"
+          },
+          "period_start": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Start"
+          },
+          "period_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Text"
+          },
+          "subnational_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subnational Name"
+          },
+          "usable_for_models": {
+            "title": "Usable For Models",
+            "type": "boolean"
+          },
+          "value_type": {
+            "$ref": "#/components/schemas/ValueType"
+          }
+        },
+        "required": [
+          "id",
+          "country_iso3",
+          "country_name",
+          "grounding_status",
+          "value_type",
+          "usable_for_models"
+        ],
+        "title": "ObservationOut",
+        "type": "object"
+      },
+      "OriginContributionOut": {
+        "properties": {
+          "arrival_rate_per_day": {
+            "title": "Arrival Rate Per Day",
+            "type": "number"
+          },
+          "effective_distance": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Distance"
+          },
+          "origin_iso3": {
+            "title": "Origin Iso3",
+            "type": "string"
+          },
+          "origin_name": {
+            "title": "Origin Name",
+            "type": "string"
+          },
+          "passengers_per_day": {
+            "title": "Passengers Per Day",
+            "type": "number"
+          },
+          "passengers_source": {
+            "title": "Passengers Source",
+            "type": "string"
+          },
+          "passengers_value_type": {
+            "$ref": "#/components/schemas/ValueType"
+          },
+          "prevalence_central": {
+            "title": "Prevalence Central",
+            "type": "number"
+          },
+          "prevalence_per_100k": {
+            "title": "Prevalence Per 100K",
+            "type": "number"
+          },
+          "prevalence_value_type": {
+            "$ref": "#/components/schemas/ValueType"
+          },
+          "report_published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Published At"
+          },
+          "report_url": {
+            "anyOf": [
+              {
+                "format": "uri",
+                "maxLength": 2083,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Url"
+          },
+          "reported_cases": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reported Cases"
+          },
+          "share_of_total": {
+            "title": "Share Of Total",
+            "type": "number"
+          },
+          "via_hubs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Via Hubs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "origin_iso3",
+          "origin_name",
+          "arrival_rate_per_day",
+          "share_of_total",
+          "passengers_per_day",
+          "passengers_value_type",
+          "passengers_source",
+          "prevalence_central",
+          "prevalence_per_100k",
+          "prevalence_value_type"
+        ],
+        "title": "OriginContributionOut",
+        "type": "object"
+      },
+      "OutbreakListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/OutbreakReportOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "OutbreakListResponse",
+        "type": "object"
+      },
+      "OutbreakReportDetail": {
+        "properties": {
+          "countries": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Countries",
+            "type": "array"
+          },
+          "disease_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disease Label"
+          },
+          "extraction_method": {
+            "$ref": "#/components/schemas/ExtractionMethod"
+          },
+          "extraction_status": {
+            "$ref": "#/components/schemas/ExtractionStatus"
+          },
+          "grounding_fields": {
+            "items": {
+              "$ref": "#/components/schemas/GroundingFieldOut"
+            },
+            "title": "Grounding Fields",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "narrative_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Narrative Text"
+          },
+          "observations": {
+            "items": {
+              "$ref": "#/components/schemas/ObservationOut"
+            },
+            "title": "Observations",
+            "type": "array"
+          },
+          "pathogen_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pathogen Key"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/Provenance"
+          },
+          "summary_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary Text"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "validation_warnings": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Validation Warnings",
+            "type": "array"
+          },
+          "warning_count": {
+            "default": 0,
+            "title": "Warning Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "provenance",
+          "extraction_method",
+          "extraction_status"
+        ],
+        "title": "OutbreakReportDetail",
+        "type": "object"
+      },
+      "OutbreakReportOut": {
+        "properties": {
+          "countries": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Countries",
+            "type": "array"
+          },
+          "disease_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disease Label"
+          },
+          "extraction_method": {
+            "$ref": "#/components/schemas/ExtractionMethod"
+          },
+          "extraction_status": {
+            "$ref": "#/components/schemas/ExtractionStatus"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "observations": {
+            "items": {
+              "$ref": "#/components/schemas/ObservationOut"
+            },
+            "title": "Observations",
+            "type": "array"
+          },
+          "pathogen_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pathogen Key"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/Provenance"
+          },
+          "summary_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary Text"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "warning_count": {
+            "default": 0,
+            "title": "Warning Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "provenance",
+          "extraction_method",
+          "extraction_status"
+        ],
+        "title": "OutbreakReportOut",
+        "type": "object"
+      },
+      "PathogenSummary": {
+        "properties": {
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "establishment_estimable": {
+            "default": true,
+            "title": "Establishment Estimable",
+            "type": "boolean"
+          },
+          "establishment_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Establishment Note"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "references": {
+            "items": {
+              "type": "string"
+            },
+            "title": "References",
+            "type": "array"
+          }
+        },
+        "required": [
+          "key",
+          "label"
+        ],
+        "title": "PathogenSummary",
+        "type": "object"
+      },
+      "PresenceStatus": {
+        "enum": [
+          "reported",
+          "not_reported",
+          "not_estimable"
+        ],
+        "title": "PresenceStatus",
+        "type": "string"
+      },
+      "Provenance": {
+        "description": "Where a record came from and when, as required by AGENTS.md section 9.3.",
+        "properties": {
+          "extraction_method": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExtractionMethod"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "extraction_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Identifier of the ingestion run that produced this record.",
+            "title": "Extraction Run Id"
+          },
+          "extraction_status": {
+            "$ref": "#/components/schemas/ExtractionStatus",
+            "default": "not_attempted"
+          },
+          "license_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Licensing or reuse condition recorded for the source.",
+            "title": "License Note"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Publication time stated by the source (UTC).",
+            "title": "Published At"
+          },
+          "retrieved_at": {
+            "description": "When EpiRoute retrieved the document (UTC).",
+            "format": "date-time",
+            "title": "Retrieved At",
+            "type": "string"
+          },
+          "source_identifier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Publisher's own identifier, e.g. the WHO DON id.",
+            "title": "Source Identifier"
+          },
+          "source_name": {
+            "description": "Publisher, e.g. 'WHO Disease Outbreak News'.",
+            "title": "Source Name",
+            "type": "string"
+          },
+          "source_url": {
+            "anyOf": [
+              {
+                "format": "uri",
+                "maxLength": 2083,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Canonical public URL of the source document.",
+            "title": "Source Url"
+          }
+        },
+        "required": [
+          "source_name",
+          "retrieved_at"
+        ],
+        "title": "Provenance",
+        "type": "object"
+      },
+      "Quantity": {
+        "description": "A single number published together with how it was produced.\n\n``value`` is ``None`` exactly when the inputs were insufficient; in that\ncase ``value_type`` is :attr:`ValueType.UNKNOWN` and ``unavailable_reason``\nexplains the gap. This invariant is enforced, which is what prevents a\nmissing input from being rendered as ``0``.",
+        "properties": {
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Short human-readable qualifier.",
+            "title": "Note"
+          },
+          "unavailable_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UnavailableReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Unit of `value`, e.g. 'passengers/day'.",
+            "title": "Unit"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "value_type": {
+            "$ref": "#/components/schemas/ValueType"
+          }
+        },
+        "required": [
+          "value",
+          "value_type"
+        ],
+        "title": "Quantity",
+        "type": "object"
+      },
+      "ResponseWarning": {
+        "description": "A caveat attached to a response.\n\nCollected into a ``warnings`` list that the UI renders next to the numbers,\nso a limitation travels with the value it qualifies instead of living only\nin the documentation.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "severity": {
+            "default": "caution",
+            "pattern": "^(info|caution|important)$",
+            "title": "Severity",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ResponseWarning",
+        "type": "object"
+      },
+      "RiskResponse": {
+        "properties": {
+          "assumptions": {
+            "items": {
+              "$ref": "#/components/schemas/Assumption"
+            },
+            "title": "Assumptions",
+            "type": "array"
+          },
+          "computed_at": {
+            "format": "date-time",
+            "title": "Computed At",
+            "type": "string"
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/DataFreshness"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "destination_iso3": {
+            "title": "Destination Iso3",
+            "type": "string"
+          },
+          "destination_name": {
+            "title": "Destination Name",
+            "type": "string"
+          },
+          "disclaimer": {
+            "title": "Disclaimer",
+            "type": "string"
+          },
+          "establishment": {
+            "$ref": "#/components/schemas/EstablishmentRisk"
+          },
+          "horizon_days": {
+            "title": "Horizon Days",
+            "type": "number"
+          },
+          "importation": {
+            "$ref": "#/components/schemas/ImportationRisk"
+          },
+          "model_version": {
+            "title": "Model Version",
+            "type": "string"
+          },
+          "pathogen": {
+            "$ref": "#/components/schemas/PathogenSummary"
+          },
+          "presence": {
+            "$ref": "#/components/schemas/LocalPresence"
+          },
+          "scenario_markers": {
+            "items": {
+              "$ref": "#/components/schemas/ScenarioMarker"
+            },
+            "title": "Scenario Markers",
+            "type": "array"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ResponseWarning"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "destination_iso3",
+          "destination_name",
+          "pathogen",
+          "horizon_days",
+          "computed_at",
+          "model_version",
+          "presence",
+          "importation",
+          "establishment",
+          "disclaimer"
+        ],
+        "title": "RiskResponse",
+        "type": "object"
+      },
+      "RouteListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RouteOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total"
+        ],
+        "title": "RouteListResponse",
+        "type": "object"
+      },
+      "RouteOut": {
+        "properties": {
+          "dest_iso3": {
+            "title": "Dest Iso3",
+            "type": "string"
+          },
+          "dest_lat": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dest Lat"
+          },
+          "dest_lon": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dest Lon"
+          },
+          "dest_name": {
+            "title": "Dest Name",
+            "type": "string"
+          },
+          "direct_route_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Direct Route Count"
+          },
+          "origin_iso3": {
+            "title": "Origin Iso3",
+            "type": "string"
+          },
+          "origin_lat": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin Lat"
+          },
+          "origin_lon": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin Lon"
+          },
+          "origin_name": {
+            "title": "Origin Name",
+            "type": "string"
+          },
+          "passengers_per_day": {
+            "title": "Passengers Per Day",
+            "type": "number"
+          },
+          "reference_period": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Period"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "uncertainty_factor": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Uncertainty Factor"
+          },
+          "value_type": {
+            "$ref": "#/components/schemas/ValueType"
+          }
+        },
+        "required": [
+          "origin_iso3",
+          "origin_name",
+          "dest_iso3",
+          "dest_name",
+          "passengers_per_day",
+          "value_type",
+          "source"
+        ],
+        "title": "RouteOut",
+        "type": "object"
+      },
+      "ScenarioMarker": {
+        "properties": {
+          "date": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date"
+          },
+          "day_offset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day Offset"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "reached": {
+            "title": "Reached",
+            "type": "boolean"
+          },
+          "threshold": {
+            "title": "Threshold",
+            "type": "number"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "day_offset",
+          "threshold",
+          "reached",
+          "detail"
+        ],
+        "title": "ScenarioMarker",
+        "type": "object"
+      },
+      "SourceListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SourceOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "title": "SourceListResponse",
+        "type": "object"
+      },
+      "SourceOut": {
+        "properties": {
+          "coverage": {
+            "title": "Coverage",
+            "type": "string"
+          },
+          "fields_used": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Fields Used",
+            "type": "array"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "licence": {
+            "title": "Licence",
+            "type": "string"
+          },
+          "limitations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Limitations",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "record_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Record Count"
+          },
+          "retrieved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retrieved At"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "format": "uri",
+                "maxLength": 2083,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "key",
+          "name",
+          "kind",
+          "coverage",
+          "licence"
+        ],
+        "title": "SourceOut",
+        "type": "object"
+      },
+      "UnavailableReason": {
+        "description": "Why a value could not be produced.\n\nAttached to every null numeric field so the UI can explain the gap instead\nof showing a blank or a zero.",
+        "enum": [
+          "no_local_case_data",
+          "no_passenger_data",
+          "no_population_data",
+          "no_prevalence_data",
+          "no_active_outbreak",
+          "parameter_not_estimable",
+          "model_not_applicable",
+          "subthreshold_transmission",
+          "numerical_failure",
+          "not_implemented"
+        ],
+        "title": "UnavailableReason",
+        "type": "string"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "ValueType": {
+        "description": "How a published number was produced.\n\nThe five categories are mutually exclusive and are surfaced verbatim in the\nAPI and the UI legend.\n\nAttributes:\n    OBSERVED: Directly reported or measured by an identified source, used\n        without transformation beyond unit conversion and ISO normalisation.\n    ESTIMATED: Derived from observations by a documented procedure that\n        introduces assumptions (an under-reporting multiplier, a gravity\n        model prediction).\n    MODELLED: Produced by an explicit mathematical model from other inputs\n        (the Poisson importation probability, the branching-process\n        establishment probability).\n    SCENARIO: Produced under user-selected or deliberately extreme\n        assumptions. Scenario values answer \"what if\", not \"what is\".\n    UNKNOWN: Inputs were insufficient to produce a meaningful value.",
+        "enum": [
+          "observed",
+          "estimated",
+          "modelled",
+          "scenario",
+          "unknown"
+        ],
+        "title": "ValueType",
+        "type": "string"
+      }
+    }
+  },
+  "info": {
+    "description": "\nEpiRoute connects public-health outbreak reports to the global air-travel\nnetwork and publishes three *separate* quantities for a destination:\n\n1. **Local presence** \u2014 is there evidence the pathogen is already there?\n2. **Importation risk** \u2014 probability that at least one infected traveller\n   arrives within a time horizon.\n3. **Local establishment risk** \u2014 probability that an introduction leads to\n   sustained local transmission.\n\nEvery numeric field carries a `value_type` of `observed`, `estimated`,\n`modelled`, `scenario` or `unknown`. A value that cannot be computed is\nreturned as `null` with an `unavailable_reason` \u2014 never as `0`.\n\nFor situational awareness and education only. Not a diagnostic tool, not an\nofficial forecast, and not a substitute for WHO or national travel guidance.\n",
+    "title": "EpiRoute API",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/admin/ingest": {
+      "post": {
+        "description": "Synchronous. A failure for one record is isolated: previously stored records are never removed, and the run record retains the error.",
+        "operationId": "trigger_ingest_api_v1_admin_ingest_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IngestRequest",
+                "default": {
+                  "limit": 20,
+                  "use_agent": false
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The WHO API was unreachable."
+          }
+        },
+        "summary": "Run a WHO Disease Outbreak News ingestion pass",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/countries": {
+      "get": {
+        "operationId": "list_countries_api_v1_countries_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CountryListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List countries",
+        "tags": [
+          "reference"
+        ]
+      }
+    },
+    "/api/v1/model/gravity": {
+      "get": {
+        "operationId": "get_gravity_model_api_v1_model_gravity_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GravityModelOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No model has been fitted."
+          }
+        },
+        "summary": "The fitted passenger-flow model and its held-out performance",
+        "tags": [
+          "metadata"
+        ]
+      }
+    },
+    "/api/v1/outbreaks": {
+      "get": {
+        "operationId": "list_outbreaks_api_v1_outbreaks_get",
+        "parameters": [
+          {
+            "description": "Pathogen profile key.",
+            "in": "query",
+            "name": "pathogen",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Pathogen profile key.",
+              "title": "Pathogen"
+            }
+          },
+          {
+            "in": "query",
+            "name": "country",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 3,
+                  "minLength": 3,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Country"
+            }
+          },
+          {
+            "description": "Only reports published at or after this time.",
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only reports published at or after this time.",
+              "title": "Since"
+            }
+          },
+          {
+            "description": "Filter by extraction status.",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ExtractionStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by extraction status.",
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutbreakListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List outbreak reports",
+        "tags": [
+          "outbreaks"
+        ]
+      }
+    },
+    "/api/v1/outbreaks/{report_id}": {
+      "get": {
+        "operationId": "get_outbreak_api_v1_outbreaks__report_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "title": "Report Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutbreakReportDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No such report."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "One outbreak report with provenance and grounding verdicts",
+        "tags": [
+          "outbreaks"
+        ]
+      }
+    },
+    "/api/v1/pathogens": {
+      "get": {
+        "operationId": "list_pathogens_api_v1_pathogens_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PathogenSummary"
+                  },
+                  "title": "Response List Pathogens Api V1 Pathogens Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Pathogen parameter profiles",
+        "tags": [
+          "metadata"
+        ]
+      }
+    },
+    "/api/v1/risk/{destination_iso3}": {
+      "get": {
+        "description": "Returns the three risk quantities for a destination, kept strictly separate:\n\n* `presence` \u2014 whether a source report attributes grounded cases to this country.\n  Flight connectivity is never an input.\n* `importation` \u2014 probability that at least one infected traveller arrives within\n  the horizon.\n* `establishment` \u2014 probability that an introduction leads to sustained local\n  transmission.\n\nEvery numeric field carries a `value_type`, and a field that cannot be computed is\n`null` with an `unavailable_reason`. Bands are **scenario ranges**, not confidence\nintervals; `band_basis` states how each was produced.",
+        "operationId": "get_risk_api_v1_risk__destination_iso3__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "destination_iso3",
+            "required": true,
+            "schema": {
+              "maxLength": 3,
+              "minLength": 3,
+              "title": "Destination Iso3",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Pathogen profile key.",
+            "in": "query",
+            "name": "pathogen",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Pathogen profile key.",
+              "title": "Pathogen"
+            }
+          },
+          {
+            "in": "query",
+            "name": "horizon_days",
+            "required": false,
+            "schema": {
+              "default": 14.0,
+              "maximum": 365,
+              "minimum": 1,
+              "title": "Horizon Days",
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "underreporting_low",
+            "required": false,
+            "schema": {
+              "default": 2.0,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Underreporting Low",
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "underreporting_central",
+            "required": false,
+            "schema": {
+              "default": 4.0,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Underreporting Central",
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "underreporting_high",
+            "required": false,
+            "schema": {
+              "default": 10.0,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Underreporting High",
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "alpha",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Alpha"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sigma",
+            "required": false,
+            "schema": {
+              "default": 0.0,
+              "maximum": 0.9,
+              "minimum": 0,
+              "title": "Sigma",
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "reproduction_number",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 20,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Reproduction Number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "dispersion_k",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "exclusiveMinimum": 0,
+                  "maximum": 1000,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dispersion K"
+            }
+          },
+          {
+            "in": "query",
+            "name": "passenger_scale",
+            "required": false,
+            "schema": {
+              "default": 1.0,
+              "exclusiveMinimum": 0,
+              "maximum": 10,
+              "title": "Passenger Scale",
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "threshold",
+            "required": false,
+            "schema": {
+              "default": 0.5,
+              "exclusiveMaximum": 1,
+              "exclusiveMinimum": 0,
+              "title": "Threshold",
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "max_origins",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Max Origins",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unknown destination country."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "A parameter is out of range."
+          }
+        },
+        "summary": "Local presence, importation and establishment risk for a destination",
+        "tags": [
+          "risk"
+        ]
+      }
+    },
+    "/api/v1/routes": {
+      "get": {
+        "description": "Each row states whether its passenger volume is `observed` (from a statistical agency) or `estimated` (gravity model). Estimated rows carry the multiplicative `uncertainty_factor` derived from the model's held-out residual spread.",
+        "operationId": "list_routes_api_v1_routes_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "origin",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 3,
+                  "minLength": 3,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Origin"
+            }
+          },
+          {
+            "in": "query",
+            "name": "dest",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 3,
+                  "minLength": 3,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dest"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RouteListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Country-pair passenger flows",
+        "tags": [
+          "reference"
+        ]
+      }
+    },
+    "/api/v1/runs": {
+      "get": {
+        "operationId": "list_runs_api_v1_runs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/IngestionRunOut"
+                  },
+                  "title": "Response List Runs Api V1 Runs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Recent ingestion runs, including failures",
+        "tags": [
+          "metadata"
+        ]
+      }
+    },
+    "/api/v1/sources": {
+      "get": {
+        "operationId": "list_sources_api_v1_sources_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Data sources with coverage, licence and known limitations",
+        "tags": [
+          "metadata"
+        ]
+      }
+    },
+    "/health": {
+      "get": {
+        "description": "Report application and dependency health.\n\nReturns HTTP 503 when a required component is down, while still returning\nthe full component breakdown in the body.",
+        "operationId": "read_health_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            },
+            "description": "All required components are healthy."
+          },
+          "503": {
+            "description": "A required component is unavailable. The body still describes every component so an operator can see which one."
+          }
+        },
+        "summary": "Service and dependency health",
+        "tags": [
+          "health"
+        ]
+      }
+    }
+  }
+}

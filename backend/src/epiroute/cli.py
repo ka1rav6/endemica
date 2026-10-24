@@ -356,6 +356,60 @@ def cmd_ingest(args: argparse.Namespace) -> int:
     return 0 if summary.status == "succeeded" else 1
 
 
+def cmd_api_check(args: argparse.Namespace) -> int:
+    import httpx
+
+    base = args.base_url.rstrip("/")
+    checks: list[tuple[str, str]] = [
+        ("health", "/health"),
+        ("countries", "/api/v1/countries"),
+        ("outbreaks", "/api/v1/outbreaks?limit=5"),
+        ("outbreak detail", "/api/v1/outbreaks?limit=1"),
+        ("routes", "/api/v1/routes?limit=5"),
+        ("sources", "/api/v1/sources"),
+        ("pathogens", "/api/v1/pathogens"),
+        ("gravity model", "/api/v1/model/gravity"),
+        ("runs", "/api/v1/runs?limit=3"),
+        ("risk (BEL)", "/api/v1/risk/BEL?horizon_days=14"),
+        ("risk unknown country", "/api/v1/risk/QQQ"),
+        ("risk bad parameter", "/api/v1/risk/BEL?horizon_days=9999"),
+    ]
+    expected_failures = {"risk unknown country": 404, "risk bad parameter": 422}
+
+    _print_header(f"API check against {base}")
+    failures = 0
+    with httpx.Client(timeout=30.0) as client:
+        for label, path in checks:
+            try:
+                response = client.get(f"{base}{path}")
+            except httpx.HTTPError as exc:
+                print(f"  {BAD} {label:<22} unreachable ({type(exc).__name__})")
+                failures += 1
+                continue
+            want = expected_failures.get(label, 200)
+            marker = OK if response.status_code == want else BAD
+            if response.status_code != want:
+                failures += 1
+            size = len(response.content)
+            print(f"  {marker} {label:<22} {response.status_code} (expected {want}) {size:>7,}B")
+
+        detail = client.get(f"{base}/api/v1/outbreaks?limit=1").json()
+        if detail.get("items"):
+            report_id = detail["items"][0]["id"]
+            response = client.get(f"{base}/api/v1/outbreaks/{report_id}")
+            marker = OK if response.status_code == 200 else BAD
+            if response.status_code != 200:
+                failures += 1
+            print(f"  {marker} {'outbreak by id':<22} {response.status_code}")
+
+    print()
+    if failures:
+        print(f"{failures} check(s) failed")
+        return 1
+    print(f"all {len(checks) + 1} checks passed")
+    return 0
+
+
 def cmd_openapi(args: argparse.Namespace) -> int:
     """Write the OpenAPI schema to a file."""
     import pathlib
@@ -428,6 +482,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-agent", action="store_true", help="Skip TinyFish Agent extraction.")
     p.add_argument("--trigger", default="manual", choices=["manual", "webhook", "scheduled"])
     p.set_defaults(func=cmd_ingest)
+
+    p = subparsers.add_parser("api-check", help="Smoke-check a running API.")
+    p.add_argument("--base-url", default="http://127.0.0.1:8000")
+    p.set_defaults(func=cmd_api_check)
 
     p = subparsers.add_parser("openapi", help="Write the OpenAPI schema to a file.")
     p.add_argument("--output", required=True, help="Destination path.")

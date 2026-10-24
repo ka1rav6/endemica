@@ -33,6 +33,12 @@ DEFAULT_SEED = 20261024
 # risk band to meaninglessness.
 MAX_UNCERTAINTY_FACTOR = 100.0
 
+# Pairs with no scheduled direct route in OpenFlights are extrapolation rather
+# than interpolation: the dominant feature is zero and the topology data is a
+# decade old, so a route that exists today may be absent from it. The residual
+# spread is widened accordingly.
+NO_ROUTE_EXTRAPOLATION_PENALTY = 1.5
+
 
 @dataclass(frozen=True, slots=True)
 class PairFeatures:
@@ -105,7 +111,21 @@ class GravityFit:
 
     @property
     def uncertainty_factor(self) -> float:
-        return float(min(10.0 ** (2.0 * self.residual_sigma_log10), MAX_UNCERTAINTY_FACTOR))
+        return self.uncertainty_factor_for(has_direct_routes=True)
+
+    def uncertainty_factor_for(self, *, has_direct_routes: bool) -> float:
+        sigma = self.residual_sigma_log10
+        strata = self.notes.get("test_metrics_by_stratum")
+        label = "with_direct_routes" if has_direct_routes else "without_direct_routes"
+        if isinstance(strata, dict):
+            stratum = strata.get(label)
+            if isinstance(stratum, dict):
+                rmse = stratum.get("rmse_log10")
+                if isinstance(rmse, (int, float)) and rmse > 0:
+                    sigma = float(rmse)
+        if not has_direct_routes:
+            sigma *= NO_ROUTE_EXTRAPOLATION_PENALTY
+        return float(min(10.0 ** (2.0 * sigma), MAX_UNCERTAINTY_FACTOR))
 
 
 def _metrics(actual: np.ndarray, predicted: np.ndarray) -> GravityMetrics:

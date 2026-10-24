@@ -221,7 +221,13 @@ def build_processed_tables(
             )
 
     if gravity is not None:
-        candidate_pairs = [key for key in topology_features if key not in observed]
+        joinable = sorted(set(populations) & set(centroids))
+        candidate_pairs = [
+            (origin, dest)
+            for origin in joinable
+            for dest in joinable
+            if origin != dest and (origin, dest) not in observed
+        ]
         candidate_features = build_feature_table(
             candidate_pairs, populations, centroids, topology_features
         )
@@ -229,15 +235,18 @@ def build_processed_tables(
             predicted = gravity.predict_passengers_per_day(features)
             if predicted < MIN_MODELLED_PASSENGERS_PER_DAY:
                 continue
+            has_routes = features.route_count > 0
             flow_rows.append(
                 {
                     "origin_iso3": key[0],
                     "dest_iso3": key[1],
                     "passengers_per_day": predicted,
                     "value_type": ValueType.ESTIMATED.value,
-                    "source": "gravity_model",
+                    "source": "gravity_model" if has_routes else "gravity_model_no_direct_route",
                     "reference_period": gravity.training_period,
-                    "uncertainty_factor": gravity.uncertainty_factor,
+                    "uncertainty_factor": gravity.uncertainty_factor_for(
+                        has_direct_routes=has_routes
+                    ),
                     "direct_route_count": features.route_count,
                 }
             )
