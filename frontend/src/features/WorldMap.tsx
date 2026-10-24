@@ -301,6 +301,15 @@ export function WorldMap({
     });
     observer.observe(container);
 
+    // A hidden tab or panel stops the render loop, and the canvas can come
+    // back empty. Re-measure and force one frame when the page is shown again.
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      map.resize();
+      map.triggerRepaint();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
     const animate = (now: number) => {
       if (cancelled) return;
       if (map.getLayer('arc-modelled')) {
@@ -581,6 +590,7 @@ export function WorldMap({
     return () => {
       cancelled = true;
       cancelAnimationFrame(raf);
+      document.removeEventListener('visibilitychange', onVisible);
       observer.disconnect();
       popup.remove();
       map.remove();
