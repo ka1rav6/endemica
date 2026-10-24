@@ -117,10 +117,14 @@ disallow_untyped_calls = false
 # ---------------------------------------------------------------------------
 [tool.pytest.ini_options]
 minversion = "8.0"
-testpaths = ["tests"]
-addopts = "-ra --strict-markers --strict-config"
+testpaths = ["tests", "src/epiroute/epidemiology"]
+addopts = "-ra --strict-markers --strict-config --doctest-modules --doctest-glob=''"
 markers = [
     "integration: requires a live PostgreSQL database (see `just test-integration`)",
     "network: requires outbound internet access; excluded from the default run",
 ]
 filterwarnings = ["error::DeprecationWarning:epiroute.*"]
+
+# Doctests in the epidemiology package are part of the test suite: the worked
+# examples in those docstrings are the documentation AGENTS.md section 5.1
+# requires, and running them keeps the documentation from drifting.
