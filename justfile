@@ -395,6 +395,11 @@ data-ingest *args:
 data-archive *args:
     "{{ py }}" -m epiroute.cli data-archive {{ args }}
 
+# Print a comparable summary of every grounded figure in this database.
+# Run it on two checkouts and diff the output to find where they disagree.
+data-fingerprint:
+    "{{ py }}" -m epiroute.cli data-fingerprint
+
 # Ingest the stored archive offline, so two checkouts end up with the same rows.
 ingest-archive *args:
     "{{ py }}" -m epiroute.cli ingest-archive {{ args }}

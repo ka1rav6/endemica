@@ -176,7 +176,9 @@ describe('App', () => {
     await waitFor(() => {
       expect(screen.getByText(/database ok/)).toBeInTheDocument();
     });
-    expect(screen.getByText(/TinyFish not configured/)).toBeInTheDocument();
+    // A checkout without the key is not broken, it is reading WHO's pages with
+    // the deterministic parser, so the chip names the mode rather than a fault.
+    expect(screen.getByText(/parser mode/)).toBeInTheDocument();
   });
 
   it('shows "not estimable" with a reason when inputs are missing', async () => {

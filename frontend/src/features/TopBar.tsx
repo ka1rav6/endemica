@@ -123,7 +123,7 @@ export function TopBar({
           </span>
           <span className="health__item" title={tinyfish?.detail ?? ''}>
             <span className={`health__led health__led--${tinyfish?.status ?? 'unavailable'}`} />
-            TinyFish {tinyfish?.status === 'ok' ? 'configured' : 'not configured'}
+            {tinyfish?.status === 'ok' ? 'TinyFish Agent' : 'parser mode'}
           </span>
         </div>
       )}

@@ -489,6 +489,30 @@ def cmd_model_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_data_fingerprint(_args: argparse.Namespace) -> int:
+    """Print what this database holds, in a form two checkouts can compare.
+
+    Run it on both machines and diff the output. Equal digests mean the two
+    agree on every figure the app would show. Different ones, with the counts
+    and the extraction methods beside them, say which of the three usual causes
+    it is: a different slice of the archive, a truncated ingest, or Agent
+    extraction on one side and the deterministic parser on the other.
+    """
+    from epiroute.db.session import session_scope
+    from epiroute.ingestion import manifest as manifest_module
+    from epiroute.repositories.outbreaks import grounded_fingerprint
+
+    settings = get_settings()
+    with session_scope() as session:
+        fingerprint = grounded_fingerprint(session)
+    committed = manifest_module.load(manifest_module.manifest_path(settings.raw_data_dir.parent))
+    fingerprint["archive_manifest_digest"] = committed.digest if committed else None
+    fingerprint["archive_manifest_records"] = len(committed.records) if committed else 0
+    fingerprint["tinyfish_key_present"] = bool(settings.tinyfish_api_key)
+    print(json.dumps(fingerprint, indent=2, default=str))
+    return 0
+
+
 def cmd_data_validate(_args: argparse.Namespace) -> int:
     from epiroute.datasets.validate import validate_processed_tables
 
@@ -501,6 +525,27 @@ def cmd_data_validate(_args: argparse.Namespace) -> int:
     return 0 if report.ok else 1
 
 
+def _warn_about_reproducibility(use_agent: bool, limit: int | None) -> None:
+    """Say, before the ingest, what would make this database differ from another's.
+
+    Both of these are invisible afterwards and both change the stored figures.
+    The Agent and the deterministic parser read different numbers out of the
+    same prose, and a limit covers a different slice of the archive, so two
+    checkouts of one commit can disagree with nothing to point at.
+    """
+    if use_agent:
+        print(
+            f"  {BAD} Agent extraction is on. Its figures will not match a checkout "
+            "without TINYFISH_API_KEY, which uses the deterministic parser. For "
+            "identical data on two machines use: just data-archive && just ingest-archive"
+        )
+    if limit is not None:
+        print(
+            f"  {BAD} --limit {limit} covers only part of the archive, so this database "
+            "will not match one built without it"
+        )
+
+
 def cmd_ingest(args: argparse.Namespace) -> int:
     from epiroute.db.session import session_scope
     from epiroute.ingestion.pipeline import run_ingestion
@@ -509,6 +554,7 @@ def cmd_ingest(args: argparse.Namespace) -> int:
     _print_header("Ingesting WHO Disease Outbreak News")
     print(f"  tinyfish: {'enabled' if settings.tinyfish_enabled else 'not configured'}")
     print(f"  agent:    {'enabled' if not args.no_agent else 'disabled'}")
+    _warn_about_reproducibility(settings.tinyfish_enabled and not args.no_agent, args.limit)
     with session_scope() as session:
         summary = run_ingestion(
             session, limit=args.limit, use_agent=not args.no_agent, trigger=args.trigger
@@ -554,6 +600,23 @@ def cmd_data_archive(args: argparse.Namespace) -> int:
     if dates:
         print(f"  range:   {dates[0]} to {dates[-1]}")
     print(f"  written: {target}")
+
+    # The manifest is committed and the archive is not, so this is what lets a
+    # second checkout find out which bulletins it is missing instead of
+    # wondering why its totals differ.
+    from epiroute.ingestion import manifest as manifest_module
+
+    built = manifest_module.build([item for item in items if isinstance(item, dict)])
+    manifest_file = manifest_module.manifest_path(settings.raw_data_dir.parent)
+    previous = manifest_module.load(manifest_file)
+    if args.write_manifest:
+        manifest_file.write_text(built.to_json(), encoding="utf-8")
+        print(f"  manifest: written to {manifest_file} ({len(built.records)} records)")
+    elif previous is not None:
+        for line in manifest_module.compare(previous, built).describe():
+            print(f"  manifest: {line}")
+    else:
+        print("  manifest: none committed yet; write one with --write-manifest")
     return 0 if items else 1
 
 
@@ -569,8 +632,29 @@ def cmd_ingest_archive(args: argparse.Namespace) -> int:
         return 1
 
     _print_header("Ingesting the local WHO DON archive")
+
+    # Say up front whether this machine is working from the same bulletins as
+    # the manifest in the repository. An ingest that silently covers a
+    # different set is the reason two checkouts disagree.
+    import json as _json
+
+    from epiroute.ingestion import manifest as manifest_module
+
+    committed = manifest_module.load(manifest_module.manifest_path(settings.raw_data_dir.parent))
+    if committed is not None:
+        payload = _json.loads(path.read_text(encoding="utf-8"))
+        items = payload.get("value") if isinstance(payload, dict) else payload
+        found = manifest_module.build([item for item in items or [] if isinstance(item, dict)])
+        for line in manifest_module.compare(committed, found).describe():
+            print(f"  manifest: {line}")
+
     records = load_archive(path, settings=settings, limit=args.limit)
     print(f"  records on disk: {len(records)}")
+    if args.limit is not None:
+        print(
+            f"  {BAD} --limit {args.limit} truncates the ingest, so this database will "
+            "not match one built without it"
+        )
     with session_scope() as session:
         summary = ingest_records(
             session, records, settings=settings, client=None, use_agent=False, trigger="manual"
@@ -744,7 +828,18 @@ def build_parser() -> argparse.ArgumentParser:
         "data-archive", help="Download every page of the WHO Disease Outbreak News archive."
     )
     p.add_argument("--max-pages", type=int, default=200)
+    p.add_argument(
+        "--write-manifest",
+        action="store_true",
+        help="Record the downloaded bulletins in data/who_don_manifest.json for commit.",
+    )
     p.set_defaults(func=cmd_data_archive)
+
+    p = subparsers.add_parser(
+        "data-fingerprint",
+        help="Print a comparable summary of every grounded figure in this database.",
+    )
+    p.set_defaults(func=cmd_data_fingerprint)
 
     p = subparsers.add_parser(
         "ingest-archive", help="Ingest the locally stored WHO DON archive without network calls."

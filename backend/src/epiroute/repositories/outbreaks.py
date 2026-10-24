@@ -1228,3 +1228,48 @@ def active_countries(session: Session, *, since: datetime) -> list[ActiveCountry
     ]
     records.sort(key=lambda r: (r.disease_count, r.cases_confirmed or 0), reverse=True)
     return records
+
+
+def grounded_fingerprint(session: Session) -> dict[str, object]:
+    """A short, order-independent summary of every figure the app would show.
+
+    Two checkouts of the same commit print this and compare. Equal output means
+    the two databases agree on every grounded number, whatever order the rows
+    were ingested in. Unequal output names the diseases that differ, which is
+    enough to tell a shorter ingest apart from a different extraction method.
+    """
+    import hashlib
+
+    endpoints = series_endpoints(session)
+    per_disease: dict[str, tuple[int, int, int]] = {}
+    for (disease, _iso3), endpoint in endpoints.items():
+        cases, deaths, countries = per_disease.get(disease, (0, 0, 0))
+        per_disease[disease] = (
+            cases + (endpoint.cases_confirmed or 0),
+            deaths + (endpoint.deaths or 0),
+            countries + 1,
+        )
+    encoded = "\n".join(
+        f"{disease}:{values[0]}:{values[1]}:{values[2]}"
+        for disease, values in sorted(per_disease.items())
+    )
+    methods: dict[str, int] = {}
+    for method, count in session.execute(
+        select(OutbreakReport.extraction_method, func.count(OutbreakReport.id)).group_by(
+            OutbreakReport.extraction_method
+        )
+    ).all():
+        methods[str(method)] = int(count)
+    return {
+        "report_count": session.scalar(select(func.count()).select_from(OutbreakReport)) or 0,
+        "observation_count": session.scalar(select(func.count()).select_from(OutbreakObservation))
+        or 0,
+        "grounded_series_count": len(endpoints),
+        "disease_count": len(per_disease),
+        "extraction_methods": methods,
+        "grounded_digest": hashlib.sha256(encoded.encode("utf-8")).hexdigest(),
+        "per_disease": {
+            disease: {"cases_confirmed": values[0], "deaths": values[1], "countries": values[2]}
+            for disease, values in sorted(per_disease.items())
+        },
+    }
