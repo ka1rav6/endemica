@@ -387,6 +387,14 @@ qa-data:
 data-ingest *args:
     "{{ py }}" -m epiroute.cli ingest {{ args }}
 
+# Download every page of the WHO Disease Outbreak News archive into data/raw.
+data-archive *args:
+    "{{ py }}" -m epiroute.cli data-archive {{ args }}
+
+# Ingest the stored archive offline, so two checkouts end up with the same rows.
+ingest-archive *args:
+    "{{ py }}" -m epiroute.cli ingest-archive {{ args }}
+
 # Write an offline demonstration snapshot to data/snapshot.
 snapshot-build:
     "{{ py }}" -m epiroute.cli snapshot-build
