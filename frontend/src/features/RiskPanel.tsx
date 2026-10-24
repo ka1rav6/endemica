@@ -101,40 +101,32 @@ function OriginRow({ origin }: { origin: OriginContribution }) {
           </dd>
         </div>
         <div>
-          <dt>Origin prevalence</dt>
-          <dd>{origin.prevalence_per_100k.toFixed(2)} / 100k</dd>
-        </div>
-        <div>
-          <dt>Arrival rate</dt>
+          <dt>Infected arrivals</dt>
           <dd>{formatRate(origin.arrival_rate_per_day)} /day</dd>
-        </div>
-        <div>
-          <dt>Effective distance</dt>
-          <dd>{origin.effective_distance === null ? '—' : origin.effective_distance.toFixed(2)}</dd>
         </div>
         <div>
           <dt>Reported cases</dt>
           <dd>{formatCount(origin.reported_cases)}</dd>
         </div>
-        <div>
-          <dt>Report date</dt>
-          <dd>{formatDate(origin.report_published_at)}</dd>
-        </div>
       </dl>
-      {origin.via_hubs.length > 0 && (
-        <p className="metric__basis">Shortest flow path runs via {origin.via_hubs.join(' → ')}</p>
-      )}
       {origin.report_url && (
         <p className="metric__basis">
           <a href={origin.report_url} target="_blank" rel="noreferrer noopener">
-            Open the source report
+            Source report
           </a>{' '}
-          · passenger source: {origin.passengers_source}
+          · {formatDate(origin.report_published_at)}
         </p>
       )}
     </li>
   );
 }
+
+// The panel answers three questions and names who feeds them. Everything that
+// was below - excluded origins, scenario thresholds, the assumption table and
+// the parameter references - lives on the Assumptions and Sources tabs, which
+// is where someone auditing the numbers goes anyway.
+const TOP_ORIGINS = 3;
+const TOP_NEXT = 5;
 
 export function RiskPanel({
   risk,
@@ -157,9 +149,9 @@ export function RiskPanel({
           </span>
         </h2>
         <p style={{ margin: 0, fontSize: 12, color: 'var(--text-faint)' }}>
-          The index above is a scenario summary. These three questions keep the separate inputs.
-          Computed {relativeAge(risk.computed_at)} with {risk.model_version} over a{' '}
-          {risk.horizon_days}-day horizon.
+          Three questions behind the index above, over a {risk.horizon_days}-day horizon. Computed{' '}
+          {relativeAge(risk.computed_at)}. Every input, threshold and reference is on the
+          Assumptions tab.
         </p>
       </div>
 
@@ -206,117 +198,46 @@ export function RiskPanel({
 
       {importation.top_origins.length > 0 && (
         <div className="sec">
-          <h2 className="sec__title">Where the risk comes from</h2>
+          <div className="sec__head">
+            <h2 className="sec__title">Where the risk comes from</h2>
+            {importation.top_origins.length > TOP_ORIGINS && (
+              <span className="chip chip--past num">
+                top {TOP_ORIGINS} of {importation.top_origins.length}
+              </span>
+            )}
+          </div>
           <ul className="list">
-            {importation.top_origins.map((origin) => (
+            {importation.top_origins.slice(0, TOP_ORIGINS).map((origin) => (
               <OriginRow key={origin.origin_iso3} origin={origin} />
             ))}
           </ul>
         </div>
       )}
 
-      {importation.excluded_origins.length > 0 && (
-        <div className="sec">
-          <h2 className="sec__title">Origins that could not be used</h2>
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Origin</th>
-                <th>Reason</th>
-              </tr>
-            </thead>
-            <tbody>
-              {importation.excluded_origins.map((entry, index) => (
-                <tr key={`${entry['origin_iso3'] ?? index}`}>
-                  <td>{entry['origin_iso3'] ?? '—'}</td>
-                  <td style={{ color: 'var(--text-muted)' }}>{entry['reason'] ?? '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      <p className="metric__basis" data-testid="calibration-status">
-        Next-country model:{' '}
-        {risk.calibration_status === 'calibrated'
-          ? 'calibrated on held-out outbreaks'
-          : 'not validated — the number below is the uncalibrated scenario'}
-      </p>
       {nextCountries && nextCountries.countries.length > 0 && (
         <div className="sec">
           <h2 className="sec__title">Most likely to report next</h2>
-          <ol>
-            {nextCountries.countries.map((country) => (
+          <ol className="ranked">
+            {nextCountries.countries.slice(0, TOP_NEXT).map((country) => (
               <li key={country.iso3}>
-                {country.name} — {formatPercent(country.probability)}
+                <span>{country.name}</span>
+                <strong className="num">{formatPercent(country.probability)}</strong>
               </li>
             ))}
           </ol>
-        </div>
-      )}
-
-      {risk.scenario_markers.length > 0 && (
-        <div className="sec">
-          <h2 className="sec__title">
-            Scenario thresholds
-            <ValueTypeBadge valueType="scenario" />
-          </h2>
-          {risk.scenario_markers.map((marker) => (
-            <div key={marker.key} style={{ marginBottom: 10 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                <span style={{ fontSize: 12.5 }}>{marker.label}</span>
-                <strong style={{ color: 'var(--scenario)', fontVariantNumeric: 'tabular-nums' }}>
-                  {marker.day_offset === null
-                    ? 'not reached within a year'
-                    : `day +${marker.day_offset}`}
-                </strong>
-              </div>
-              <p className="metric__basis" style={{ marginTop: 2 }}>
-                {marker.detail}
-              </p>
-            </div>
-          ))}
+          <p className="metric__basis" data-testid="calibration-status">
+            {risk.calibration_status === 'calibrated'
+              ? 'Calibrated on held-out outbreaks.'
+              : 'Not validated — these are uncalibrated scenario numbers.'}
+          </p>
         </div>
       )}
 
       {risk.warnings.length > 0 && (
-        <div className="sec">
-          <h2 className="sec__title">Caveats</h2>
+        <details className="sec fold">
+          <summary>Caveats on this estimate ({risk.warnings.length})</summary>
           <Warnings warnings={risk.warnings} />
-        </div>
-      )}
-
-      <div className="sec">
-        <h2 className="sec__title">Assumptions behind these numbers</h2>
-        <div>
-          {risk.assumptions.map((assumption) => (
-            <div className="assumption" key={assumption.key}>
-              <span>{assumption.label}</span>
-              <span className="assumption__value">
-                {String(assumption.value)}
-                {assumption.unit ? ` ${assumption.unit}` : ''}
-              </span>
-              <span className="assumption__source">
-                from {assumption.source}
-                {assumption.note ? ` — ${assumption.note}` : ''}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {pathogen.references.length > 0 && (
-        <div className="sec">
-          <h2 className="sec__title">Parameter references</h2>
-          <ul className="list" style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
-            {pathogen.references.map((reference) => (
-              <li key={reference} style={{ marginBottom: 5 }}>
-                {reference}
-              </li>
-            ))}
-          </ul>
-        </div>
+        </details>
       )}
 
       <p className="footnote">{risk.disclaimer}</p>

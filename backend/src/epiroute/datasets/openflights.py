@@ -124,6 +124,33 @@ def load_country_topology(
     }
 
 
+def airport_route_degrees(routes_path: Path, airports: dict[str, Airport]) -> dict[str, int]:
+    """Scheduled non-stop routes touching each airport, by IATA code.
+
+    Degree stands in for how prominent an airport is. OpenFlights has no seat
+    counts, so the number of distinct routes an airport appears on - in either
+    direction, domestic included - is the honest proxy the source supports.
+    """
+    degrees: dict[str, int] = defaultdict(int)
+    seen: set[tuple[str, str, str]] = set()
+    with routes_path.open(encoding="utf-8", newline="") as handle:
+        for row in csv.DictReader(handle, fieldnames=list(_ROUTE_COLUMNS)):
+            source = (row["source_airport"] or "").strip()
+            dest = (row["destination_airport"] or "").strip()
+            if source not in airports or dest not in airports:
+                continue
+            if (row["stops"] or "0").strip() not in ("0", ""):
+                continue
+            airline = (row["airline"] or "").strip()
+            key = (airline, source, dest)
+            if key in seen:
+                continue
+            seen.add(key)
+            degrees[source] += 1
+            degrees[dest] += 1
+    return dict(degrees)
+
+
 def country_centroids_from_airports(
     airports: dict[str, Airport],
 ) -> dict[str, tuple[float, float]]:

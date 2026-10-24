@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { ErrorNotice } from '@/components/ErrorNotice';
 import { ComparePanel } from '@/features/ComparePanel';
 import { CountryPanel } from '@/features/CountryPanel';
 import { DiseaseRail } from '@/features/DiseaseRail';
 import { ReportsPanel } from '@/features/ReportsPanel';
+import { RiskDetail } from '@/features/RiskDetail';
 import { RiskPanel } from '@/features/RiskPanel';
 import { ScenarioControls } from '@/features/ScenarioControls';
 import { SourcesPanel } from '@/features/SourcesPanel';
@@ -47,9 +48,18 @@ const TABS: { id: Tab; label: string }[] = [
 ];
 
 const MAX_DATA_AGE_DAYS = 7;
+const MAX_CORRIDORS = 60;
 const ACTIVE_WINDOW_DAYS = 90;
 const RAIL_KEY = 'epiroute.railCollapsed';
 const PANEL_KEY = 'epiroute.panelCollapsed';
+const RAIL_WIDTH_KEY = 'epiroute.railWidth';
+const PANEL_WIDTH_KEY = 'epiroute.panelWidth';
+
+// Narrow enough that a disease name still fits, wide enough that the map keeps
+// most of the window at 1280px.
+const RAIL_RANGE = { min: 196, max: 460 };
+const PANEL_RANGE = { min: 300, max: 660 };
+const KEYBOARD_STEP = 16;
 
 function readFlag(key: string): boolean {
   try {
@@ -57,6 +67,46 @@ function readFlag(key: string): boolean {
   } catch {
     return false;
   }
+}
+
+function readWidth(key: string): number | null {
+  try {
+    const stored = sessionStorage.getItem(key);
+    const value = stored === null ? Number.NaN : Number(stored);
+    return Number.isFinite(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+/** A sidebar column the viewer can drag, remembered for the session. */
+function useColumnWidth(key: string, range: { min: number; max: number }) {
+  const [width, setWidth] = useState<number | null>(() => readWidth(key));
+  const latest = useRef(width);
+  latest.current = width;
+  const set = useCallback(
+    (value: number | null) => {
+      const next =
+        value === null ? null : Math.round(Math.min(range.max, Math.max(range.min, value)));
+      setWidth(next);
+      try {
+        if (next === null) sessionStorage.removeItem(key);
+        else sessionStorage.setItem(key, String(next));
+      } catch {
+        // Private mode can reject storage; the drag still applies for this view.
+      }
+    },
+    [key, range.max, range.min],
+  );
+  // Keyboard steps work off the width already chosen, not off where the edge
+  // happens to be drawn, so holding an arrow key does not stall mid-animation.
+  const nudge = useCallback(
+    (delta: number, measured: number) => {
+      set((latest.current ?? measured) + delta);
+    },
+    [set],
+  );
+  return { width, set, nudge };
 }
 
 function useSessionFlag(key: string): [boolean, () => void] {
@@ -96,6 +146,62 @@ function useMinWidth(pixels: number): boolean {
   return matches;
 }
 
+/**
+ * The draggable edge of a sidebar.
+ *
+ * It is a button rather than a bare div so the column can also be sized from
+ * the keyboard, which a pointer-only grip would put out of reach.
+ */
+function SidebarGrip({
+  label,
+  onResize,
+  onNudge,
+  onReset,
+}: {
+  label: string;
+  onResize: (clientX: number) => void;
+  onNudge: (delta: number) => void;
+  onReset: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="sidebar__grip"
+      aria-label={label}
+      title={`${label} (double-click to reset)`}
+      onDoubleClick={onReset}
+      onKeyDown={(event) => {
+        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+        event.preventDefault();
+        onNudge(event.key === 'ArrowLeft' ? -KEYBOARD_STEP : KEYBOARD_STEP);
+      }}
+      onPointerDown={(event) => {
+        event.preventDefault();
+        const grip = event.currentTarget;
+        try {
+          grip.setPointerCapture(event.pointerId);
+        } catch {
+          // Capture is an optimisation: without it the drag still follows the
+          // pointer, it just stops if the cursor leaves the grip.
+        }
+        document.body.classList.add('is-resizing');
+        const move = (moved: PointerEvent) => {
+          onResize(moved.clientX);
+        };
+        const stop = () => {
+          document.body.classList.remove('is-resizing');
+          grip.removeEventListener('pointermove', move);
+          grip.removeEventListener('pointerup', stop);
+          grip.removeEventListener('pointercancel', stop);
+        };
+        grip.addEventListener('pointermove', move);
+        grip.addEventListener('pointerup', stop);
+        grip.addEventListener('pointercancel', stop);
+      }}
+    />
+  );
+}
+
 function SidebarChevron({ direction }: { direction: 'left' | 'right' }) {
   return (
     <svg className="sidebar__chevron" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
@@ -131,6 +237,9 @@ export default function App() {
   const railHidden = railCollapsed && railWide;
   const panelHidden = panelCollapsed && panelWide;
   const landed = useRef(false);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const rail = useColumnWidth(RAIL_WIDTH_KEY, RAIL_RANGE);
+  const panel = useColumnWidth(PANEL_WIDTH_KEY, PANEL_RANGE);
   const railBodyRef = useRef<HTMLDivElement>(null);
   const railTabRef = useRef<HTMLButtonElement>(null);
   const panelBodyRef = useRef<HTMLDivElement>(null);
@@ -204,7 +313,7 @@ export default function App() {
   const routes = useAsync(
     (signal) =>
       selectedIso3 && showFlows
-        ? getRoutes({ dest: selectedIso3, limit: 40 }, signal)
+        ? getRoutes({ dest: selectedIso3, limit: 200 }, signal)
         : Promise.resolve(null),
     [selectedIso3, showFlows, dataNonce],
   );
@@ -235,29 +344,31 @@ export default function App() {
   const activeRisk =
     risk.data && selectedIso3 && risk.data.destination_iso3 === selectedIso3 ? risk.data : null;
 
-  // With no disease chosen, follow the one the selected country actually
-  // reports, so the map and the panels never disagree about the subject.
-  const effectiveDiseaseKey = activeMode
-    ? null
-    : (diseaseKey ?? activeRisk?.pathogen.disease_key ?? null);
+  // What to shade the map with when the combined view is switched off and
+  // nothing has been picked yet: what the open country is reporting now, or
+  // failing that the last thing it reported.
+  const fallbackDiseaseKey =
+    profile.data?.diseases.find((disease) => disease.is_active)?.disease_key ??
+    profile.data?.diseases[0]?.disease_key ??
+    activeRisk?.pathogen.disease_key ??
+    null;
+
+  // The map's subject is whatever the viewer chose: the combined active view
+  // or a disease picked from the rail. It deliberately does not follow the
+  // selected country, because then clicking a country would repaint the whole
+  // map - and repaint that country, which is what made a red country go green.
+  const effectiveDiseaseKey = activeMode ? null : diseaseKey;
   const activeCount = active.data?.disease_count ?? activeKeys.size;
   const activeLabel = `all ${activeCount} active disease${activeCount === 1 ? '' : 's'}`;
   const effectiveDiseaseName = activeMode
     ? activeLabel
-    : (spread.data?.disease_name ??
-      diseaseList.find((entry) => entry.disease_key === effectiveDiseaseKey)?.disease_name ??
-      activeRisk?.pathogen.disease_name ??
-      null);
+    : effectiveDiseaseKey === null
+      ? null
+      : (spread.data?.disease_name ??
+        diseaseList.find((entry) => entry.disease_key === effectiveDiseaseKey)?.disease_name ??
+        null);
 
-  const followed = useAsync(
-    (signal) =>
-      !diseaseKey && effectiveDiseaseKey
-        ? getDiseaseSpread(effectiveDiseaseKey, signal)
-        : Promise.resolve(null),
-    [diseaseKey, effectiveDiseaseKey, dataNonce],
-  );
-
-  const activeSpread = diseaseKey ? spread.data : followed.data;
+  const activeSpread = spread.data;
   const timelinePoints = useMemo(
     () => (activeMode ? [] : (activeSpread?.timeline ?? [])),
     [activeMode, activeSpread],
@@ -289,13 +400,17 @@ export default function App() {
     [activeRisk],
   );
 
-  // Corridors that carry risk are the point, but a destination with no usable
-  // origin would otherwise draw nothing at all, so fall back to its busiest
-  // inbound routes. The map marks which ones currently carry a disease.
+  // Every corridor the destination actually has, busiest first, with the ones
+  // that currently carry a reporting origin drawn first so they are never cut
+  // off by the cap. Showing a dozen of a country's two hundred inbound routes
+  // made the network look far thinner than the data says it is.
   const relevantRoutes = useMemo(() => {
-    const inbound = (routes.data?.items ?? []).filter((route) => route.dest_iso3 === selectedIso3);
+    const inbound = (routes.data?.items ?? [])
+      .filter((route) => route.dest_iso3 === selectedIso3)
+      .sort((x, y) => y.passengers_per_day - x.passengers_per_day);
     const carrying = inbound.filter((route) => originIso3.has(route.origin_iso3));
-    return carrying.length > 0 ? carrying : inbound.slice(0, 12);
+    const rest = inbound.filter((route) => !originIso3.has(route.origin_iso3));
+    return [...carrying, ...rest].slice(0, MAX_CORRIDORS);
   }, [routes.data, originIso3, selectedIso3]);
 
   const handleCountryClick = useCallback((iso3: string | null, additive: boolean) => {
@@ -359,6 +474,7 @@ export default function App() {
       />
 
       <div
+        ref={bodyRef}
         className={[
           'app__body',
           railCollapsed ? 'app__body--rail-collapsed' : '',
@@ -366,6 +482,12 @@ export default function App() {
         ]
           .filter(Boolean)
           .join(' ')}
+        style={
+          {
+            ...(rail.width === null ? {} : { '--rail': `${rail.width}px` }),
+            ...(panel.width === null ? {} : { '--panel': `${panel.width}px` }),
+          } as CSSProperties
+        }
       >
         <div
           className={railCollapsed ? 'sidebar sidebar--left is-collapsed' : 'sidebar sidebar--left'}
@@ -388,7 +510,10 @@ export default function App() {
               activeMode={activeMode}
               onActiveMode={(on) => {
                 setActiveMode(on);
+                // Leaving the combined view with nothing picked would blank the
+                // map, so adopt the disease the open country is reporting.
                 if (on) setDiseaseKey(null);
+                else if (!diseaseKey) setDiseaseKey(fallbackDiseaseKey);
               }}
               activeKeys={activeKeys}
             />
@@ -405,6 +530,21 @@ export default function App() {
             <SidebarChevron direction={railCollapsed ? 'right' : 'left'} />
             {railCollapsed && <span className="sidebar__tab-label">Diseases</span>}
           </button>
+          {!railCollapsed && (
+            <SidebarGrip
+              label="Resize the diseases sidebar"
+              onResize={(clientX) => {
+                const left = bodyRef.current?.getBoundingClientRect().left ?? 0;
+                rail.set(clientX - left);
+              }}
+              onNudge={(delta) => {
+                rail.nudge(delta, railBodyRef.current?.getBoundingClientRect().width ?? 0);
+              }}
+              onReset={() => {
+                rail.set(null);
+              }}
+            />
+          )}
         </div>
 
         <div className="app__stage">
@@ -459,6 +599,21 @@ export default function App() {
             <SidebarChevron direction={panelCollapsed ? 'left' : 'right'} />
             {panelCollapsed && <span className="sidebar__tab-label">Details</span>}
           </button>
+          {!panelCollapsed && (
+            <SidebarGrip
+              label="Resize the details sidebar"
+              onResize={(clientX) => {
+                const right = bodyRef.current?.getBoundingClientRect().right ?? 0;
+                panel.set(right - clientX);
+              }}
+              onNudge={(delta) => {
+                panel.nudge(-delta, panelBodyRef.current?.getBoundingClientRect().width ?? 0);
+              }}
+              onReset={() => {
+                panel.set(null);
+              }}
+            />
+          )}
           <div
             id="detail-panel"
             className="sidebar__body"
@@ -598,7 +753,7 @@ export default function App() {
                     )}
                     <SpreadPanel
                       spread={activeSpread}
-                      loading={spread.loading || followed.loading}
+                      loading={spread.loading}
                       yearCeiling={yearCeiling}
                       selectedIso3={selectedIso3}
                       onSelectCountry={setSelectedIso3}
@@ -648,12 +803,15 @@ export default function App() {
                 )}
 
                 {tab === 'assumptions' && (
-                  <ScenarioControls
-                    state={scenario}
-                    onChange={setScenario}
-                    pathogens={pathogens.data ?? []}
-                    establishmentEstimable={establishmentEstimable}
-                  />
+                  <>
+                    <ScenarioControls
+                      state={scenario}
+                      onChange={setScenario}
+                      pathogens={pathogens.data ?? []}
+                      establishmentEstimable={establishmentEstimable}
+                    />
+                    <RiskDetail risk={activeRisk} />
+                  </>
                 )}
 
                 {tab === 'reports' && (

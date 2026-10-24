@@ -190,6 +190,8 @@ describe('App', () => {
   it('lists the origins that could not be used, with reasons', async () => {
     risk.current = fixtures.unavailableRisk();
     await renderOnRiskTab();
+    // The audit trail sits with the assumptions, not in the risk summary.
+    await userEvent.click(screen.getByRole('tab', { name: 'Assumptions' }));
     expect(screen.getByText(/Origins that could not be used/)).toBeInTheDocument();
     expect(screen.getByText(/no passenger flow to this destination/)).toBeInTheDocument();
   });
@@ -333,13 +335,14 @@ describe('App', () => {
   it('marks which passenger volumes are observed and which are modelled', async () => {
     await renderOnRiskTab();
     expect(screen.getByText(/Where the risk comes from/)).toBeInTheDocument();
-    const origins = screen.getByText(/Where the risk comes from/).closest('div');
+    const origins = screen.getByText(/Where the risk comes from/).closest<HTMLElement>('.sec');
     expect(origins).not.toBeNull();
     expect(within(origins!).getByText('obs')).toBeInTheDocument();
   });
 
   it('labels scenario markers as scenarios, not predictions', async () => {
     await renderOnRiskTab();
+    await userEvent.click(screen.getByRole('tab', { name: 'Assumptions' }));
     expect(screen.getByText(/Scenario thresholds/)).toBeInTheDocument();
     expect(screen.getByText(/not a safety date/)).toBeInTheDocument();
   });
@@ -406,9 +409,13 @@ describe('Disease history and the country record', () => {
     });
     await userEvent.click(screen.getByRole('tab', { name: 'Spread' }));
     await waitFor(() => {
-      expect(screen.getByText('Order of arrival')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Arrival' })).toBeInTheDocument();
     });
-    const list = screen.getByText('Order of arrival').closest<HTMLElement>('.sec');
+    // The list ranks by cases by default; this is the arrival ordering.
+    await userEvent.click(screen.getByRole('button', { name: 'Arrival' }));
+    const section = screen.getByText('Order of arrival').closest<HTMLElement>('.sec');
+    expect(section).not.toBeNull();
+    const list = section!.querySelector<HTMLElement>('.list');
     expect(list).not.toBeNull();
     const names = within(list!)
       .getAllByRole('button')
@@ -457,10 +464,13 @@ describe('Disease history and the country record', () => {
       'Destination',
     );
     await userEvent.click(screen.getByRole('button', { name: /Destination Land/ }));
+    // One label per question, with an answer from each country under it.
     await waitFor(() => {
-      expect(screen.getAllByText('Already here').length).toBe(2);
+      expect(screen.getAllByText('Test respiratory disease').length).toBeGreaterThan(1);
     });
-    expect(screen.getAllByText('Test respiratory disease').length).toBeGreaterThan(1);
+    const label = screen.getByText('Already here');
+    expect(label.nextElementSibling).not.toBeNull();
+    expect(label.nextElementSibling?.nextElementSibling).toHaveClass('cmp__cell');
   });
 });
 

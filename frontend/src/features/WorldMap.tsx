@@ -15,7 +15,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 setWorkerUrl(maplibreWorkerUrl);
 import type { Feature, FeatureCollection, LineString, Point as GeoPoint } from 'geojson';
 import { formatCount, formatPassengers } from '@/lib/format';
-import { greatCircleLine } from '@/lib/geo';
+import { greatCircleKm, greatCircleLine } from '@/lib/geo';
 import { RISK_COLOR_STOPS, riskColor, riskFillExpression } from '@/lib/riskColor';
 import type { MapSpreadEntry } from '@/lib/spread';
 import { arcsToCollection, spreadArcs, type SpreadArc } from '@/lib/spreadFlow';
@@ -23,6 +23,15 @@ import type { Country, OriginContribution, Route } from '@/types/api';
 
 const API_BOUNDARIES_URL = '/data/country_boundaries.geojson';
 const BUNDLED_BOUNDARIES_URL = '/boundaries/countries.geojson';
+const AIRPORTS_URL = '/data/airports.geojson';
+
+// The airports of one country, busiest first. Past this the dots overlap into
+// a blob and say nothing, and every country but a handful has fewer anyway.
+const MAX_AIRPORTS = 40;
+// Below this the whole country is a few pixels wide, so its airports would all
+// land on the same spot.
+const AIRPORT_MIN_ZOOM = 2.6;
+const HOME_VIEW = { center: [12, 22] as [number, number], zoom: 1.5 };
 
 const C = {
   water: '#060910',
@@ -144,6 +153,73 @@ function graticule(): FeatureCollection<LineString> {
   return { type: 'FeatureCollection', features };
 }
 
+interface AirportProperties {
+  iata: string;
+  name: string;
+  iso3: string;
+  routes: number;
+}
+
+let airportRequest: Promise<FeatureCollection<GeoPoint, AirportProperties>> | null = null;
+
+/** Fetched once per session, then shared: the file is the same for every country. */
+function loadAirports(): Promise<FeatureCollection<GeoPoint, AirportProperties>> {
+  airportRequest ??= fetch(AIRPORTS_URL).then(async (response) => {
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return (await response.json()) as FeatureCollection<GeoPoint, AirportProperties>;
+  });
+  return airportRequest;
+}
+
+/**
+ * The selected country's airports, scored by how far each one is from the
+ * outbreak centre.
+ *
+ * WHO Disease Outbreak News is reported at country level, so the honest
+ * epicentre is the country's own centroid - the same point the pin marks. The
+ * distance is scored 0-10 across this country's own airports, so the ramp
+ * always spans the country rather than the globe.
+ */
+function airportFeatures(
+  collection: FeatureCollection<GeoPoint, AirportProperties> | null,
+  country: Country | undefined,
+): FeatureCollection<GeoPoint> {
+  const empty: FeatureCollection<GeoPoint> = { type: 'FeatureCollection', features: [] };
+  if (!collection || !country) return empty;
+  const { centroid_lat: lat, centroid_lon: lon } = country;
+  if (lat === null || lon === null) return empty;
+
+  const own = collection.features
+    .filter((feature) => feature.properties.iso3 === country.iso3)
+    .sort((x, y) => y.properties.routes - x.properties.routes)
+    .slice(0, MAX_AIRPORTS);
+  if (own.length === 0) return empty;
+
+  const measured = own.map((feature) => {
+    const [airportLon, airportLat] = feature.geometry.coordinates;
+    return {
+      feature,
+      km: greatCircleKm({ lat, lon }, { lat: airportLat ?? lat, lon: airportLon ?? lon }),
+    };
+  });
+  const farthest = Math.max(...measured.map((entry) => entry.km), 1);
+  const busiest = Math.max(...measured.map((entry) => entry.feature.properties.routes), 1);
+
+  return {
+    type: 'FeatureCollection',
+    features: measured.map(({ feature, km }) => ({
+      type: 'Feature',
+      properties: {
+        ...feature.properties,
+        km: Math.round(km),
+        distance: (km / farthest) * 10,
+        weight: feature.properties.routes / busiest,
+      },
+      geometry: feature.geometry,
+    })),
+  };
+}
+
 async function loadBoundaries(): Promise<BoundaryCollection> {
   try {
     const response = await fetch(API_BOUNDARIES_URL, { signal: AbortSignal.timeout(5000) });
@@ -242,6 +318,9 @@ export function WorldMap({
   const flewTo = useRef<string | null>(null);
   const [ready, setReady] = useState(false);
   const [boundaryError, setBoundaryError] = useState<string | null>(null);
+  const [airports, setAirports] = useState<FeatureCollection<GeoPoint, AirportProperties> | null>(
+    null,
+  );
   const selectRef = useRef(onSelect);
   selectRef.current = onSelect;
   const flowLinesRef = useRef<SpreadArc[]>([]);
@@ -267,11 +346,15 @@ export function WorldMap({
         sources: {},
         layers: [{ id: 'bg', type: 'background', paint: { 'background-color': C.water } }],
       },
-      center: [12, 22],
-      zoom: 1.5,
+      center: HOME_VIEW.center,
+      zoom: HOME_VIEW.zoom,
       minZoom: 0.9,
       maxZoom: 7,
       attributionControl: false,
+      // MapLibre's box zoom owns shift-drag, and it swallows the click that
+      // ends it. Comparing two countries with shift-click matters more here
+      // than a rubber-band zoom the scroll wheel already does.
+      boxZoom: false,
       renderWorldCopies: true,
       fadeDuration: 0,
       canvasContextAttributes: { antialias: true },
@@ -482,6 +565,36 @@ export function WorldMap({
             },
           });
 
+          map.addSource('airports', {
+            type: 'geojson',
+            data: { type: 'FeatureCollection', features: [] },
+          });
+          map.addLayer({
+            id: 'airport-dot',
+            type: 'circle',
+            source: 'airports',
+            minzoom: AIRPORT_MIN_ZOOM,
+            paint: {
+              'circle-radius': [
+                'interpolate',
+                ['linear'],
+                ['get', 'weight'],
+                0,
+                3,
+                1,
+                8.5,
+              ] as ExpressionSpecification,
+              'circle-color': riskFillExpression([
+                'coalesce',
+                ['get', 'distance'],
+                0,
+              ]) as unknown as ExpressionSpecification,
+              'circle-opacity': 0.95,
+              'circle-stroke-width': 1.6,
+              'circle-stroke-color': '#06101a',
+            },
+          });
+
           map.addSource('pin', {
             type: 'geojson',
             data: { type: 'FeatureCollection', features: [] },
@@ -598,6 +711,30 @@ export function WorldMap({
             map.getCanvas().style.cursor = 'pointer';
             popup.setLngLat(event.lngLat).setDOMContent(routePopup(properties)).addTo(map);
           };
+          map.on('mousemove', 'airport-dot', (event: MapLayerMouseEvent) => {
+            const properties = event.features?.[0]?.properties;
+            if (!properties) return;
+            map.getCanvas().style.cursor = 'pointer';
+            const root = document.createElement('div');
+            root.append(
+              node('strong', `${String(properties['name'])} (${String(properties['iata'])})`),
+              node('div', `${formatCount(Number(properties['routes']))} scheduled routes`, {
+                color: '#a8bacd',
+                fontSize: '10.5px',
+                marginTop: '2px',
+              }),
+              node('div', `${formatCount(Number(properties['km']))} km from the reported centre`, {
+                color: riskColor(Number(properties['distance'])),
+                fontSize: '11px',
+              }),
+            );
+            popup.setLngLat(event.lngLat).setDOMContent(root).addTo(map);
+          });
+          map.on('mouseleave', 'airport-dot', () => {
+            popup.remove();
+            map.getCanvas().style.cursor = '';
+          });
+
           map.on('mousemove', 'arc-observed', showArc);
           map.on('mousemove', 'arc-modelled', showArc);
           map.on('mousemove', 'spread-flow', (event: MapLayerMouseEvent) => {
@@ -733,20 +870,59 @@ export function WorldMap({
     if (pin instanceof GeoJSONSource) void pin.setData(pointFor(selected));
   }, [ready, selected]);
 
+  // Fetched the first time a country is opened, not on load: nothing is drawn
+  // from it until then, and the file is the largest the map pulls.
+  useEffect(() => {
+    if (!selected || airports) return;
+    let cancelled = false;
+    loadAirports()
+      .then((data) => {
+        if (!cancelled) setAirports(data);
+      })
+      .catch(() => {
+        // Built by `just data-build`. Without it the map simply draws no
+        // airports, which is better than an error over a working map.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selected, airports]);
+
+  const countryAirports = useMemo(() => airportFeatures(airports, selected), [airports, selected]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const source = map.getSource('airports');
+    if (source instanceof GeoJSONSource) void source.setData(countryAirports);
+  }, [ready, countryAirports]);
+
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready || !selected || flewTo.current === selected.iso3) return;
     const { centroid_lat: lat, centroid_lon: lon } = selected;
     if (lat === null || lon === null) return;
     flewTo.current = selected.iso3;
+    // Close enough that the country's airports come in, which is the point of
+    // opening one: the dots and the pin together show where its traffic sits
+    // relative to where the outbreak is reported.
     const camera = {
       center: [lon, lat] as [number, number],
-      zoom: Math.max(map.getZoom(), 2.3),
+      zoom: Math.max(map.getZoom(), 3.1),
       essential: true,
     };
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) map.jumpTo(camera);
     else map.easeTo({ ...camera, duration: 950 });
   }, [ready, selected]);
+
+  const resetView = () => {
+    const map = mapRef.current;
+    if (!map) return;
+    // Clearing this lets the same country fly in again when it is next picked.
+    flewTo.current = null;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) map.jumpTo(HOME_VIEW);
+    else map.easeTo({ ...HOME_VIEW, duration: 700, essential: true });
+  };
 
   const firstYear = spread.reduce<number | null>(
     (min, entry) =>
@@ -757,6 +933,10 @@ export function WorldMap({
   return (
     <div className="map">
       <div className="map__canvas" ref={containerRef} data-testid="map-canvas" />
+
+      <button type="button" className="map__reset" onClick={resetView} title="Reset the view">
+        Reset view
+      </button>
 
       {boundaryError && (
         <div className="map__status">
@@ -832,6 +1012,18 @@ export function WorldMap({
                 Growth into {yearCeiling}
               </span>
             )}
+            {countryAirports.features.length > 0 && (
+              <>
+                <span className="legend__row">
+                  <span className="swatch" style={{ background: riskColor(0) }} />
+                  Airport nearest the reported centre
+                </span>
+                <span className="legend__row">
+                  <span className="swatch" style={{ background: riskColor(10) }} />
+                  Farthest · dot size is scheduled routes
+                </span>
+              </>
+            )}
             {showFlows && (
               <>
                 <span className="legend__row">
@@ -857,10 +1049,10 @@ export function WorldMap({
 
       <div className="hud map__hint">
         {activeMode
-          ? 'Every country with a report in the last 90 days, shaded by how many diseases. Click one for its record, or the sea to clear.'
+          ? 'Every country with a report in the last 90 days, shaded by how many diseases — not by the travel-risk index. Click one for its record, shift-click a second to compare, click the sea to clear.'
           : spread.length > 0
-            ? 'Shaded by when each country first reported this disease. Click one for its record, shift-click to compare two. Click the sea to clear.'
-            : 'Click any country to see every disease ever reported there. Shift-click a second one to compare.'}
+            ? 'Shaded by when each country first reported this disease — not by the travel-risk index. Click one for its record, shift-click a second to compare, click the sea to clear.'
+            : 'Pick a disease on the left to shade the map. Click any country for its record, shift-click a second one to compare.'}
       </div>
     </div>
   );

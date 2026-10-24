@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { OutbreakReport, OutbreakReportDetail } from '@/types/api';
+import type { Observation, OutbreakReport, OutbreakReportDetail } from '@/types/api';
 import { getOutbreak } from '@/services/epiroute';
 import { formatCount, formatDate, relativeAge } from '@/lib/format';
 import { ValueTypeBadge } from '@/components/ValueTypeBadge';
@@ -13,10 +13,42 @@ const STATUS_LABEL: Record<string, string> = {
   not_attempted: 'from a structured source field',
 };
 
+/**
+ * Only the figures this observation actually has.
+ *
+ * A report the validation gate could not ground has nothing in any of these
+ * fields, and four columns of em dashes read as a broken layout rather than as
+ * the honest "no number here" it is.
+ */
+function ObservationFigures({ observation }: { observation: Observation }) {
+  const figures: [string, string][] = [
+    ['Confirmed', formatCount(observation.cases_confirmed)],
+    ['Suspected', formatCount(observation.cases_suspected)],
+    ['Deaths', formatCount(observation.deaths)],
+    ['Period', observation.period_text ?? '—'],
+  ].filter((entry): entry is [string, string] => entry[1] !== '—');
+
+  if (figures.length === 0) {
+    return (
+      <p className="metric__basis">No figure in this report could be matched to its source text.</p>
+    );
+  }
+  return (
+    <dl className="kv">
+      {figures.map(([label, value]) => (
+        <div key={label}>
+          <dt>{label}</dt>
+          <dd>{value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 function ReportDetail({ report }: { report: OutbreakReportDetail }) {
   const rejected = report.grounding_fields.filter((f) => f.verdict !== 'grounded');
   return (
-    <div style={{ marginTop: 8 }}>
+    <div>
       {report.observations.length === 0 ? (
         <p className="empty">
           No grounded observation came out of this report. Its source link is kept so the report
@@ -35,24 +67,7 @@ function ReportDetail({ report }: { report: OutbreakReportDetail }) {
                 <span style={{ fontSize: 11, color: 'var(--unknown)' }}>excluded from models</span>
               )}
             </div>
-            <dl className="kv">
-              <div>
-                <dt>Confirmed</dt>
-                <dd>{formatCount(observation.cases_confirmed)}</dd>
-              </div>
-              <div>
-                <dt>Suspected</dt>
-                <dd>{formatCount(observation.cases_suspected)}</dd>
-              </div>
-              <div>
-                <dt>Deaths</dt>
-                <dd>{formatCount(observation.deaths)}</dd>
-              </div>
-              <div>
-                <dt>Period</dt>
-                <dd>{observation.period_text ?? '—'}</dd>
-              </div>
-            </dl>
+            <ObservationFigures observation={observation} />
             {observation.evidence_text && (
               <blockquote className="evidence">{observation.evidence_text}</blockquote>
             )}
@@ -61,8 +76,8 @@ function ReportDetail({ report }: { report: OutbreakReportDetail }) {
       )}
 
       {rejected.length > 0 && (
-        <details style={{ marginTop: 8 }}>
-          <summary style={{ cursor: 'pointer', fontSize: 12, color: 'var(--text-muted)' }}>
+        <details className="fold" style={{ marginTop: 8 }}>
+          <summary>
             {rejected.length} extracted value{rejected.length === 1 ? '' : 's'} rejected by the
             validation gate
           </summary>
@@ -178,14 +193,14 @@ export function ReportsPanel({ reports, onCountrySelect }: Props) {
               </button>
 
               {expanded && (
-                <div style={{ padding: '0 10px 10px' }}>
+                <div className="report__body">
                   {loading && <div className="spinner" aria-label="Loading report detail" />}
                   {error !== null && <ErrorNotice error={error} context="Loading the report" />}
                   {detail && detail.id === report.id && <ReportDetail report={detail} />}
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+                  <div className="report__actions">
                     {report.provenance.source_url && (
                       <a
-                        className="btn"
+                        className="btn btn--sm"
                         href={report.provenance.source_url}
                         target="_blank"
                         rel="noreferrer noopener"
@@ -197,7 +212,7 @@ export function ReportsPanel({ reports, onCountrySelect }: Props) {
                     {primaryCountry !== undefined && (
                       <button
                         type="button"
-                        className="btn"
+                        className="btn btn--sm"
                         onClick={() => {
                           onCountrySelect(primaryCountry);
                         }}

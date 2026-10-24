@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState, type ReactElement } from 'react';
 import type { Country, CountryProfile, RiskResponse } from '@/types/api';
 import { formatCount, formatPercent, unavailableText } from '@/lib/format';
 
@@ -83,100 +83,112 @@ function CountryPicker({
         ))}
         {matches.length === 0 && <li className="cmp__none">No country matches.</li>}
       </ul>
+      <p className="cmp__hint">Or shift-click a second country on the map.</p>
     </div>
   );
 }
 
-function Column({ side, variant }: { side: Side; variant: 'a' | 'b' }) {
-  const { profile, risk } = side;
-  if (!profile) return null;
-  const importation = risk?.importation.probability;
-  const establishment = risk?.establishment.probability_within_horizon;
-  const presence = risk?.presence;
-
+function Cell({ value, note }: { value: string; note: string }) {
   return (
-    <div className={variant === 'b' ? 'cmp__col cmp__col--b' : 'cmp__col'}>
+    <dd className="cmp__cell">
+      {value}
+      <small>{note}</small>
+    </dd>
+  );
+}
+
+function Head({ side, variant }: { side: Side; variant: 'a' | 'b' }) {
+  const { profile, risk } = side;
+  return (
+    <div className="cmp__head">
       <span className="cmp__name">
         <span
           className="dot"
           style={{ color: variant === 'a' ? 'var(--accent)' : 'var(--modelled)' }}
           aria-hidden="true"
         />
-        {profile.name}
+        {profile?.name ?? '—'}
       </span>
       <span className="cmp__disease">
         {risk?.pathogen.disease_name ?? risk?.pathogen.label ?? 'no disease resolved'}
       </span>
-
-      <div className="cmp__metric">
-        <dt>Already here</dt>
-        <dd>
-          {presence?.status === 'reported' ? (
-            <>
-              Yes
-              <small>
-                latest reports: {formatCount(presence.cases_confirmed?.value ?? null)} cases ·{' '}
-                {formatCount(presence.deaths?.value ?? null)} deaths
-              </small>
-            </>
-          ) : (
-            <>
-              No
-              <small>no grounded report for this disease</small>
-            </>
-          )}
-        </dd>
-      </div>
-
-      <div className="cmp__metric">
-        <dt>Arrival within {risk?.horizon_days ?? '—'} d</dt>
-        <dd>
-          {importation?.central == null ? (
-            <>
-              —<small>{unavailableText(importation?.unavailable_reason ?? null)}</small>
-            </>
-          ) : (
-            <>
-              {formatPercent(importation.central)}
-              <small>
-                range {formatPercent(importation.low)} – {formatPercent(importation.high)}
-              </small>
-            </>
-          )}
-        </dd>
-      </div>
-
-      <div className="cmp__metric">
-        <dt>Local transmission</dt>
-        <dd>
-          {establishment?.central == null ? (
-            <>
-              —<small>{unavailableText(establishment?.unavailable_reason ?? null)}</small>
-            </>
-          ) : (
-            <>
-              {formatPercent(establishment.central)}
-              <small>
-                range {formatPercent(establishment.low)} – {formatPercent(establishment.high)}
-              </small>
-            </>
-          )}
-        </dd>
-      </div>
-
-      <div className="cmp__metric">
-        <dt>Diseases on record</dt>
-        <dd>
-          {profile.diseases.length}
-          <small>
-            {profile.active_disease_count} active · {formatCount(profile.report_count)} reports
-            since 1996
-          </small>
-        </dd>
-      </div>
     </div>
   );
 }
+
+/**
+ * One row per question, both countries on it.
+ *
+ * Each side used to be its own stack of boxes, so the rows only lined up when
+ * the two notes happened to wrap the same way. A shared grid keeps every
+ * answer on the line of the question it answers.
+ */
+const ROWS: { key: string; label: (side: Side) => string; cell: (side: Side) => ReactElement }[] = [
+  {
+    key: 'presence',
+    label: () => 'Already here',
+    cell: (side) => {
+      const presence = side.risk?.presence;
+      if (presence?.status === 'reported') {
+        return (
+          <Cell
+            value="Yes"
+            note={`${formatCount(presence.cases_confirmed?.value ?? null)} cases · ${formatCount(
+              presence.deaths?.value ?? null,
+            )} deaths`}
+          />
+        );
+      }
+      return <Cell value="No" note="no grounded report for this disease" />;
+    },
+  },
+  {
+    key: 'importation',
+    label: (side) => `Arrival within ${side.risk?.horizon_days ?? 28} days`,
+    cell: (side) => {
+      const band = side.risk?.importation.probability;
+      if (band?.central == null) {
+        return <Cell value="—" note={unavailableText(band?.unavailable_reason ?? null)} />;
+      }
+      return (
+        <Cell
+          value={formatPercent(band.central)}
+          note={`range ${formatPercent(band.low)} – ${formatPercent(band.high)}`}
+        />
+      );
+    },
+  },
+  {
+    key: 'establishment',
+    label: () => 'Local transmission',
+    cell: (side) => {
+      const band = side.risk?.establishment.probability_within_horizon;
+      if (band?.central == null) {
+        return <Cell value="—" note={unavailableText(band?.unavailable_reason ?? null)} />;
+      }
+      return (
+        <Cell
+          value={formatPercent(band.central)}
+          note={`range ${formatPercent(band.low)} – ${formatPercent(band.high)}`}
+        />
+      );
+    },
+  },
+  {
+    key: 'record',
+    label: () => 'Diseases on record',
+    cell: (side) => {
+      const profile = side.profile;
+      if (!profile) return <Cell value="—" note="no record loaded" />;
+      return (
+        <Cell
+          value={String(profile.diseases.length)}
+          note={`${profile.active_disease_count} active · ${formatCount(profile.report_count)} reports`}
+        />
+      );
+    },
+  },
+];
 
 export function ComparePanel({ a, b, countries, onPick, onClear }: Props) {
   if (!a.profile) {
@@ -200,15 +212,30 @@ export function ComparePanel({ a, b, countries, onPick, onClear }: Props) {
         </div>
 
         {b.profile ? (
-          <div className="cmp">
-            <Column side={a} variant="a" />
-            <Column side={b} variant="b" />
-          </div>
+          <dl className="cmp">
+            <Head side={a} variant="a" />
+            <Head side={b} variant="b" />
+            {ROWS.map((row) => (
+              <Fragment key={row.key}>
+                <dt className="cmp__label">{row.label(a)}</dt>
+                {row.cell(a)}
+                {row.cell(b)}
+              </Fragment>
+            ))}
+          </dl>
         ) : (
-          <div className="cmp">
-            <Column side={a} variant="a" />
+          <>
+            <dl className="cmp cmp--single">
+              <Head side={a} variant="a" />
+              {ROWS.map((row) => (
+                <Fragment key={row.key}>
+                  <dt className="cmp__label">{row.label(a)}</dt>
+                  {row.cell(a)}
+                </Fragment>
+              ))}
+            </dl>
             <CountryPicker countries={countries} exclude={a.profile.iso3} onPick={onPick} />
-          </div>
+          </>
         )}
       </div>
 

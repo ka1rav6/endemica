@@ -14,6 +14,7 @@ from epiroute.datasets.eurostat import load_observed_flows
 from epiroute.datasets.gravity import GravityFit, build_feature_table, fit_gravity_model
 from epiroute.datasets.naturalearth import load_country_geometries
 from epiroute.datasets.openflights import (
+    airport_route_degrees,
     country_centroids_from_airports,
     load_airports,
     load_country_topology,
@@ -30,9 +31,15 @@ COUNTRIES_TABLE = "countries.parquet"
 FLOWS_TABLE = "country_flows.parquet"
 TOPOLOGY_TABLE = "airport_routes.parquet"
 BOUNDARIES_FILE = "country_boundaries.geojson"
+AIRPORTS_FILE = "airports.geojson"
 GRAVITY_FILE = "gravity_fit.json"
 
 MIN_MODELLED_PASSENGERS_PER_DAY = 0.05
+
+# An airport with no scheduled route in OpenFlights cannot carry anyone in or
+# out, so it is left out of the map file rather than drawn as a dot that means
+# nothing.
+MIN_AIRPORT_ROUTES = 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -175,6 +182,36 @@ def build_processed_tables(
     }
     boundaries_path = out / BOUNDARIES_FILE
     boundaries_path.write_text(json.dumps(boundaries, separators=(",", ":")), encoding="utf-8")
+
+    degrees = airport_route_degrees(
+        _require(raw / get_spec("openflights_routes").filename, "openflights_routes"), airports
+    )
+    # Busiest first, so a client that reads only the head of the file still
+    # gets the airports that matter.
+    ranked = sorted(
+        (a for a in airports.values() if degrees.get(a.iata, 0) >= MIN_AIRPORT_ROUTES),
+        key=lambda airport: -degrees[airport.iata],
+    )
+    airport_features = [
+        {
+            "type": "Feature",
+            "properties": {
+                "iata": airport.iata,
+                "name": airport.name,
+                "iso3": airport.country_iso3,
+                "routes": degrees[airport.iata],
+            },
+            "geometry": {"type": "Point", "coordinates": [airport.longitude, airport.latitude]},
+        }
+        for airport in ranked
+    ]
+    airports_path = out / AIRPORTS_FILE
+    airports_path.write_text(
+        json.dumps(
+            {"type": "FeatureCollection", "features": airport_features}, separators=(",", ":")
+        ),
+        encoding="utf-8",
+    )
 
     populations = {iso3: record.population for iso3, record in population.items()}
     centroids: dict[str, tuple[float, float]] = {}
@@ -326,5 +363,5 @@ def build_processed_tables(
         modelled_flows=modelled_count,
         topology_pairs=len(topology_df),
         gravity=gravity,
-        written=(countries_path, flows_path, topology_path, boundaries_path),
+        written=(countries_path, flows_path, topology_path, boundaries_path, airports_path),
     )

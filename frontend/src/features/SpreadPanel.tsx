@@ -1,5 +1,13 @@
+import { useMemo, useState } from 'react';
 import type { DiseaseSpread } from '@/types/api';
 import { formatCount, formatDate } from '@/lib/format';
+
+type Order = 'cases' | 'arrival';
+
+const ORDERS: { id: Order; label: string; title: string }[] = [
+  { id: 'cases', label: 'Worst hit', title: 'Most confirmed cases first' },
+  { id: 'arrival', label: 'Arrival', title: 'In the order the disease reached each country' },
+];
 
 interface Props {
   spread: DiseaseSpread | null;
@@ -16,6 +24,23 @@ export function SpreadPanel({
   selectedIso3,
   onSelectCountry,
 }: Props) {
+  const [order, setOrder] = useState<Order>('cases');
+
+  // Countries within the year being shown, ranked. A case count of null means
+  // no report grounded a number, which is not the same as zero, so those sort
+  // last rather than mixing in among the genuinely small outbreaks.
+  const visible = useMemo(() => {
+    const within = (spread?.countries ?? []).filter((country) => {
+      if (yearCeiling === null) return true;
+      const year = country.first_published_at
+        ? Number(country.first_published_at.slice(0, 4))
+        : null;
+      return year === null || year <= yearCeiling;
+    });
+    if (order === 'arrival') return within;
+    return [...within].sort((x, y) => (y.cases_confirmed ?? -1) - (x.cases_confirmed ?? -1));
+  }, [spread, yearCeiling, order]);
+
   if (loading && !spread) {
     return (
       <div className="sec" style={{ display: 'flex', gap: 9, alignItems: 'center' }}>
@@ -29,11 +54,6 @@ export function SpreadPanel({
     return <p className="empty">Pick a disease to trace how it spread.</p>;
   }
 
-  const visible = spread.countries.filter((country) => {
-    if (yearCeiling === null) return true;
-    const year = country.first_published_at ? Number(country.first_published_at.slice(0, 4)) : null;
-    return year === null || year <= yearCeiling;
-  });
   const worst = Math.max(...visible.map((country) => country.cases_confirmed ?? 0), 1);
   const hidden = spread.countries.length - visible.length;
 
@@ -68,8 +88,26 @@ export function SpreadPanel({
 
       <div className="sec">
         <div className="sec__head">
-          <h3 className="sec__title">Order of arrival</h3>
+          <h3 className="sec__title">
+            {order === 'cases' ? 'Ranked by confirmed cases' : 'Order of arrival'}
+          </h3>
           {hidden > 0 && <span className="chip chip--past num">{hidden} later, hidden</span>}
+          <div className="segments" role="group" aria-label="Rank countries by">
+            {ORDERS.map((entry) => (
+              <button
+                key={entry.id}
+                type="button"
+                className="segment"
+                aria-pressed={order === entry.id}
+                title={entry.title}
+                onClick={() => {
+                  setOrder(entry.id);
+                }}
+              >
+                {entry.label}
+              </button>
+            ))}
+          </div>
         </div>
         {visible.length === 0 ? (
           <p className="empty" style={{ padding: '14px 0' }}>
@@ -88,7 +126,9 @@ export function SpreadPanel({
                   }}
                 >
                   <span className="row__top">
-                    <span className="row__rank num">{country.arrival_order}</span>
+                    <span className="row__rank num" title="Order of arrival">
+                      {country.arrival_order}
+                    </span>
                     <span className="row__name">{country.country_name}</span>
                     <span className="row__aside">
                       {country.first_published_at?.slice(0, 4) ?? '—'}

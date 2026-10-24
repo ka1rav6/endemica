@@ -1782,27 +1782,31 @@ button.row[aria-current='true'] {
 .cmp {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  gap: 0 8px;
+  margin: 0;
+  align-items: start;
 }
 
-.cmp__col {
+.cmp--single {
+  grid-template-columns: 1fr;
+}
+
+.cmp__head {
   display: grid;
-  gap: 7px;
+  gap: 2px;
   align-content: start;
-  padding: 10px;
-  border-radius: var(--r);
-  background: var(--surface-2);
+  min-width: 0;
+  padding: 9px 10px;
   border: 1px solid var(--line);
-}
-
-.cmp__col--b {
-  border-color: var(--line-2);
+  border-radius: var(--r) var(--r) 0 0;
+  background: var(--surface-2);
 }
 
 .cmp__name {
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
   font-size: 12.5px;
   font-weight: 650;
   letter-spacing: -0.01em;
@@ -1814,43 +1818,55 @@ button.row[aria-current='true'] {
   font-weight: 550;
 }
 
-.cmp__metric {
-  display: grid;
-  gap: 1px;
-  padding-top: 6px;
-  border-top: 1px solid var(--line);
-}
-
-.cmp__metric dt {
+/* One label per question, spanning both answers, so the two columns can never
+   drift out of line however long a note wraps. */
+.cmp__label {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 10px 0 3px;
   font-size: 9.5px;
   font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--ink-4);
+  border-top: 1px solid var(--line);
 }
 
-.cmp__metric dd {
-  margin: 0;
+.cmp__label:first-of-type {
+  border-top: 0;
+  padding-top: 8px;
+}
+
+.cmp__cell {
+  margin: 0 0 4px;
+  min-width: 0;
   font-size: 15px;
   font-weight: 650;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
 }
 
-.cmp__metric dd small {
+.cmp__cell small {
   display: block;
   font-size: 10px;
   font-weight: 500;
   color: var(--ink-4);
   letter-spacing: 0;
+  line-height: 1.35;
+}
+
+.cmp__hint {
+  margin: 2px 0 0;
+  font-size: 10.5px;
+  color: var(--ink-4);
 }
 
 .cmp__slot {
   display: grid;
   place-items: center;
   gap: 7px;
-  min-height: 130px;
-  padding: 14px;
+  margin-top: 10px;
+  padding: 12px;
   border-radius: var(--r);
   border: 1px dashed var(--line-2);
   text-align: center;
@@ -2316,4 +2332,227 @@ button.row[aria-current='true'] {
   font-size: 10.5px;
   line-height: 1.4;
   color: var(--ink-4);
+}
+
+/* ------------------------------------------------------------- report list */
+
+.report {
+  display: grid;
+  gap: 5px;
+  width: 100%;
+  padding: 9px 10px;
+  text-align: left;
+  border-radius: var(--r-sm);
+  border: 1px solid transparent;
+  color: var(--ink-2);
+  transition:
+    background 120ms ease,
+    border-color 120ms ease;
+}
+
+.report:hover {
+  background: var(--surface-2);
+  border-color: var(--line);
+  color: var(--ink);
+}
+
+.report--selected {
+  background: var(--surface-2);
+  border-color: var(--line-2);
+  color: var(--ink);
+}
+
+.report__title {
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+
+.report__meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px 8px;
+  font-size: 10.5px;
+  color: var(--ink-4);
+  font-variant-numeric: tabular-nums;
+}
+
+.report__body {
+  display: grid;
+  gap: 8px;
+  padding: 2px 10px 12px;
+}
+
+.report__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.evidence {
+  margin: 6px 0 0;
+  padding: 6px 9px;
+  border-left: 2px solid var(--line-2);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--ink-3);
+  background: var(--surface-2);
+  border-radius: 0 var(--r-xs) var(--r-xs) 0;
+}
+
+/* ---------------------------------------------------------- small controls */
+
+.segments {
+  display: flex;
+  gap: 3px;
+  flex: 0 0 auto;
+  padding: 2px;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+}
+
+.segments .segment {
+  flex: 0 0 auto;
+  height: 21px;
+  padding: 0 8px;
+}
+
+.ranked {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+  counter-reset: ranked;
+}
+
+.ranked li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.ranked li:last-child {
+  border-bottom: 0;
+}
+
+.ranked li span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+details.fold > summary {
+  cursor: pointer;
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  list-style: none;
+}
+
+details.fold > summary::-webkit-details-marker {
+  display: none;
+}
+
+details.fold > summary::before {
+  content: '▸ ';
+  color: var(--ink-4);
+}
+
+details.fold[open] > summary::before {
+  content: '▾ ';
+}
+
+details.fold > summary:hover {
+  color: var(--ink);
+}
+
+details.fold[open] > summary {
+  margin-bottom: 8px;
+}
+
+/* --------------------------------------------------------- map reset button */
+
+.map__reset {
+  position: absolute;
+  z-index: 6;
+  top: 88px;
+  right: 10px;
+  height: 26px;
+  padding: 0 9px;
+  font-size: 11px;
+  font-weight: 550;
+  color: var(--ink-2);
+  background: var(--surface-glass, rgb(10 16 24 / 82%));
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-sm);
+  backdrop-filter: blur(7px);
+}
+
+.map__reset:hover {
+  color: var(--ink);
+  background: var(--surface-2);
+}
+
+/* ------------------------------------------------------- sidebar resizing */
+
+.sidebar__grip {
+  position: absolute;
+  z-index: 8;
+  top: 0;
+  bottom: 0;
+  width: 7px;
+  cursor: col-resize;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  touch-action: none;
+}
+
+.sidebar--left .sidebar__grip {
+  right: -3px;
+}
+
+.sidebar--right .sidebar__grip {
+  left: -3px;
+}
+
+.sidebar__grip::after {
+  content: '';
+  position: absolute;
+  inset: 0 2px;
+  border-radius: 2px;
+  background: transparent;
+  transition: background 120ms ease;
+}
+
+.sidebar__grip:hover::after,
+.sidebar__grip:focus-visible::after {
+  background: var(--accent);
+  opacity: 0.55;
+}
+
+.sidebar.is-collapsed .sidebar__grip {
+  display: none;
+}
+
+/* While a grip is dragged the column must track the pointer exactly, so the
+   animation that makes the collapse toggle glide is switched off. */
+body.is-resizing {
+  user-select: none;
+  cursor: col-resize;
+}
+
+body.is-resizing .app__body {
+  transition: none;
 }
