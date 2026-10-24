@@ -101,7 +101,7 @@ plugins = []
 warn_unreachable = true
 # Third-party packages without bundled type information.
 [[tool.mypy.overrides]]
-module = ["selectolax.*", "networkx.*", "pycountry.*", "respx.*"]
+module = ["selectolax.*", "networkx.*", "pycountry.*", "respx.*", "sklearn.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

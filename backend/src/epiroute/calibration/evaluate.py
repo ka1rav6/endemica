@@ -244,6 +244,11 @@ def _column(frame: pd.DataFrame, name: str) -> np.ndarray:
     """
     if name == "log_population":
         return frame["log_population"].to_numpy(dtype=float)
+    if name == "log_week":
+        # Weeks since the outbreak's first report. It is the plain version of
+        # what log_affected is a proxy for, so comparing the two says whether
+        # the affected-country count carries anything beyond elapsed time.
+        return np.log1p(frame["week_index"].to_numpy(dtype=float))
     column: np.ndarray = design_from_panel(frame)[:, FEATURE_NAMES.index(name) + 1]
     return column
 
@@ -301,6 +306,27 @@ CANDIDATES: tuple[Candidate, ...] = (
         "The arrival rate as the only feature. What the app's stated mechanism "
         "achieves on its own.",
         ("log_lambda",),
+    ),
+    _candidate(
+        "hazard_without_lambda",
+        "The served model with the arrival rate removed. log(lambda) and "
+        "log(inbound) correlate at 0.74 on the rows that have travel evidence, "
+        "and lambda's marginal correlation with the label is 0.075 against "
+        "inbound's 0.305, so the constrained fit puts lambda's coefficient on "
+        "its zero boundary. This ablation is the check: it scores identically "
+        "to the served model on every fold, which is what a coefficient of "
+        "exactly zero means. The term is kept so that its measured zero is "
+        "visible in this report rather than being an omission nobody can see.",
+        ("log_inbound", "log_affected"),
+    ),
+    _candidate(
+        "hazard_week_for_affected",
+        "Elapsed weeks in place of the affected-country count. The two are "
+        "near-duplicates (log_affected correlates 0.89 with the passenger-"
+        "weighted mean origin prevalence), so this asks which description of "
+        "the epidemic's phase transfers better. It wins on mpox and loses on "
+        "COVID-19, which is not a reason to switch.",
+        ("log_lambda", "log_inbound", "log_week"),
     ),
     _candidate(
         "hazard_inbound_only",

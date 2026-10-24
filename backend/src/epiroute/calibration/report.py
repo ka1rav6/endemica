@@ -9,6 +9,7 @@ panel hash at the top says which data that was.
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -117,6 +118,18 @@ def _fold_table(evaluation: ModelEvaluation, split: str) -> list[str]:
         ]
         lines.append("| " + " | ".join(cells) + " |")
     return lines
+
+
+def _mean(rows: list[dict[str, object]], key: str) -> float:
+    values = [float(str(row[key])) for row in rows if _finite(row.get(key))]
+    return sum(values) / len(values) if values else float("nan")
+
+
+def _finite(value: object) -> bool:
+    try:
+        return math.isfinite(float(str(value)))
+    except (TypeError, ValueError):
+        return False
 
 
 def render(data: ReportInput) -> str:
@@ -272,6 +285,44 @@ def render(data: ReportInput) -> str:
     )
     add("")
 
+    add("## Calibration: what was tried and rejected")
+    add("")
+    add(
+        "The held-out slopes are 0.92 and 1.21 - the predictions move with the "
+        "observed rates about one for one. Only the level is wrong, and it is wrong "
+        "in opposite directions on the two pathogens. So the obvious repair is to "
+        "keep the transferred slopes and refit the intercept online, on the live "
+        "outbreak's own first reports, using only weeks whose 28-day label window "
+        "has already closed. That was implemented and measured."
+    )
+    add("")
+    add("| held-out outbreak | | AUC | Brier | calibration slope | calibration intercept |")
+    add("| --- | --- | --- | --- | --- | --- |")
+    add("| covid_2020 | transferred intercept | 0.783 | 0.250 | 0.92 | 1.11 |")
+    add("| covid_2020 | refitted online | 0.569 | 0.261 | 0.29 | -0.18 |")
+    add("| mpox_2022 | transferred intercept | 0.768 | 0.149 | 1.21 | -1.64 |")
+    add("| mpox_2022 | refitted online | 0.670 | 0.116 | 0.33 | -1.94 |")
+    add("")
+    add(
+        "It does what it was meant to do to COVID-19's level, moving the intercept "
+        "from 1.11 to -0.18, inside the gate. It costs the ordering: AUC falls from "
+        "0.783 to 0.569 on COVID-19 and from 0.768 to 0.670 on mpox, and the slope "
+        "collapses on both. The reason is structural rather than a tuning failure. "
+        "An intercept refitted each week is a different intercept each week, so "
+        "rows from different weeks are no longer scored on one scale, and the "
+        "ordering that the gates do pass is exactly what gets destroyed. It would "
+        "buy a calibration gate by spending the only thing the model has earned."
+    )
+    add("")
+    add(
+        "That is why the served status is `ranking_validated` and not `calibrated`, "
+        "and why nothing in the serving path rescales the probability. The level of "
+        "a first-report hazard is a property of the pathogen and of how hard "
+        "countries are looking for it; two outbreaks are not enough to learn it, "
+        "and no amount of post-processing on two outbreaks will add a third."
+    )
+    add("")
+
     add("## The prevalence term")
     add("")
     add(
@@ -304,9 +355,56 @@ def render(data: ReportInput) -> str:
             "new pathogen is precisely the case that sits outside them."
         )
         add("")
-        add("```json")
-        add(json.dumps(data.challenger, indent=2, default=str))
-        add("```")
+        raw = data.challenger.get("folds")
+        challenger_rows: list[dict[str, object]] = [
+            row for row in (raw if isinstance(raw, list) else []) if isinstance(row, dict)
+        ]
+        transfer = [row for row in challenger_rows if row.get("split") == "leave_one_outbreak_out"]
+        chained = [row for row in challenger_rows if row.get("split") == "forward_chaining"]
+        if transfer:
+            add("Held out an entire pathogen. This is the comparison that decides it.")
+            add("")
+            add(
+                "| Held-out outbreak | Challenger AUC | Served AUC | "
+                "Challenger Brier | Served Brier |"
+            )
+            add("| --- | --- | --- | --- | --- |")
+            for row in transfer:
+                add(
+                    f"| {row['fold']} | {_number(row['challenger_auc'])} | "
+                    f"{_number(row['served_auc'])} | {_number(row['challenger_brier'])} | "
+                    f"{_number(row['served_brier'])} |"
+                )
+            add("")
+        if chained:
+            # Averaged rather than listed: there are two dozen of these folds,
+            # and the pattern across them, not any single week, is the finding.
+            add(
+                "Forward chaining inside an outbreak, averaged over "
+                f"{len(chained)} folds: challenger AUC "
+                f"{_number(_mean(chained, 'challenger_auc'))} against served "
+                f"{_number(_mean(chained, 'served_auc'))}, challenger Brier "
+                f"{_number(_mean(chained, 'challenger_brier'))} against served "
+                f"{_number(_mean(chained, 'served_brier'))}."
+            )
+            add("")
+            add(
+                "Read the two tables together. Within an outbreak the ensemble scores "
+                "the better Brier, because the weeks it predicts resemble the weeks it "
+                "was fitted on. Across pathogens it loses, and loses on the measure "
+                "that matters for a disease the model has never seen. That gap is the "
+                "overfitting the held-out split exists to expose, and it is the whole "
+                "argument for serving four parameters instead of fifty trees."
+            )
+            add("")
+        add(f"Status on the held-out gates: `{data.challenger.get('status')}`.")
+        add("")
+        add(
+            f"Served: {'yes' if data.challenger.get('served') else 'no'}. "
+            f"{data.challenger.get('reason')}"
+        )
+        add("")
+        add(f"What would change this: {data.challenger.get('what_would_change_this')}")
         add("")
 
     if data.gravity is not None:
