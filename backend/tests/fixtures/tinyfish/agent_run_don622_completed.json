@@ -1,0 +1,145 @@
+{
+  "run_id": "f6525134-0f66-43ce-b0bc-4c2b577ab9d0",
+  "status": "COMPLETED",
+  "goal": "Navigate to https://www.who.int/emergencies/disease-outbreak-news/item/2026-DON622 to complete the goal: Read this public-health outbreak report. Return the disease name exactly as written, every country mentioned as affected, confirmed and suspected case counts and deaths with the period they cover, and the report date. Copy the sentence each number came from into evidence. If a value is not stated, return null. Do not infer or calculate numbers.",
+  "created_at": "2026-10-24T07:28:11Z",
+  "started_at": "2026-10-24T07:28:13Z",
+  "finished_at": "2026-10-24T07:30:00Z",
+  "num_of_steps": 8,
+  "result": {
+    "disease": "Ebola disease caused by Bundibugyo virus",
+    "locations": [
+      {
+        "deaths": 3271,
+        "period": "Since 15 May 2026 (epicentre)",
+        "country": "Democratic Republic of the Congo",
+        "evidence": "Ituri remains the epicentre, with 7040 cumulative confirmed cases and 3271 deaths.",
+        "subnational": "Ituri",
+        "cases_confirmed": 7040,
+        "cases_suspected": 9291
+      },
+      {
+        "deaths": 1199,
+        "period": "During this outbreak",
+        "country": "Democratic Republic of the Congo",
+        "evidence": "Nord Kivu follows with 2146 confirmed cases and 1199 deaths.",
+        "subnational": "Nord Kivu",
+        "cases_confirmed": 2146,
+        "cases_suspected": 430
+      },
+      {
+        "deaths": 183,
+        "period": "During this outbreak",
+        "country": "Democratic Republic of the Congo",
+        "evidence": "Haut-Uélé has reported 421 cases and 183 deaths.",
+        "subnational": "Haut-Uélé",
+        "cases_confirmed": 421,
+        "cases_suspected": 123
+      },
+      {
+        "deaths": 27,
+        "period": "During this outbreak",
+        "country": "Democratic Republic of the Congo",
+        "evidence": "Tshopo has recorded 76 cases and 27 deaths.",
+        "subnational": "Tshopo",
+        "cases_confirmed": 76,
+        "cases_suspected": 3
+      },
+      {
+        "deaths": 4687,
+        "period": "As of 20 October 2026",
+        "country": "Democratic Republic of the Congo",
+        "evidence": "As of 20 October, cumulative confirmed cases have reached 9704, including 4687 deaths and 2595 recoveries.",
+        "subnational": "Eight provinces",
+        "cases_confirmed": 9704,
+        "cases_suspected": 2595
+      },
+      {
+        "deaths": 976,
+        "period": "Since the previous DON published on 8 October 2026",
+        "country": "Democratic Republic of the Congo",
+        "evidence": "An additional 976 confirmed cases, including 482 confirmed deaths, have been reported in the Democratic Republic of the Congo since the previous Disease Outbreak News was published.",
+        "subnational": "Six provinces",
+        "cases_confirmed": 976,
+        "cases_suspected": 482
+      },
+      {
+        "deaths": 4687,
+        "period": "Most recent 24-hour period, as of 20 October",
+        "country": "Democratic Republic of the Congo",
+        "evidence": "In the most recent 24-hour period, as of 20 October, 67 new confirmed cases were reported, with Ituri accounting for 37 cases, Nord Kivu for 29, and Tshopo for one case.",
+        "subnational": "Ituri",
+        "cases_confirmed": 37,
+        "cases_suspected": 31
+      },
+      {
+        "deaths": 183,
+        "period": "In Haut-Uélé",
+        "country": "Democratic Republic of the Congo",
+        "evidence": "Four provinces were below the threshold: Haut-Uélé (89.9%; 1286/1430)",
+        "subnational": "Six provinces",
+        "cases_confirmed": 1286,
+        "cases_suspected": 423
+      }
+    ],
+    "report_date": "23 October 2026"
+  },
+  "output_schema": {
+    "type": "object",
+    "required": [
+      "disease",
+      "locations"
+    ],
+    "properties": {
+      "disease": {
+        "type": "string"
+      },
+      "locations": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "country",
+            "evidence"
+          ],
+          "properties": {
+            "deaths": {
+              "type": "integer"
+            },
+            "period": {
+              "type": "string"
+            },
+            "country": {
+              "type": "string"
+            },
+            "evidence": {
+              "type": "string"
+            },
+            "subnational": {
+              "type": "string"
+            },
+            "cases_confirmed": {
+              "type": "integer"
+            },
+            "cases_suspected": {
+              "type": "integer"
+            }
+          }
+        }
+      },
+      "report_date": {
+        "type": "string"
+      }
+    }
+  },
+  "profile_attached": false,
+  "profile_id": null,
+  "error": null,
+  "streaming_url": "https://ip-54-215-226-122.tetra-data.production.tinyfish.io/tf-04a95297-9820-4ce7-9eac-dcea41fff773/stream/0",
+  "browser_config": {
+    "proxy_enabled": false,
+    "proxy_country_code": null
+  },
+  "video_url": null,
+  "steps": []
+}

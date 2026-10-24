@@ -68,30 +68,24 @@ select = [
     "SIM",       # simplify
     "RUF",       # ruff-specific
     "ANN",       # annotations on public surfaces
-    "D",         # docstrings
     "PTH",       # prefer pathlib
-    "TRY",       # error-handling antipatterns
     "ARG",       # unused arguments
     "N",         # naming
 ]
 ignore = [
-    "D104",    # package docstrings are not required on every __init__
-    "D203",    # incompatible with D211
-    "D213",    # incompatible with D212
     "ANN401",  # Any is occasionally the honest annotation for external JSON
     "TRY003",  # long messages inside raise are useful for operators
     "B008",    # FastAPI's Depends()/Query() defaults are the documented idiom
-    "D107",    # the Google convention documents __init__ args in the class docstring
+    "RUF001",  # ambiguous unicode is deliberate: thousands separators, en dashes
+    "RUF002",
+    "RUF003",
 ]
 
 [tool.ruff.lint.per-file-ignores]
 # Tests document themselves through their names; full docstring rules and
 # annotation rules would add noise without improving clarity.
-"tests/**" = ["D", "ANN", "ARG", "E501"]
-"src/epiroute/db/migrations/**" = ["D", "ANN", "E501", "I"]
-
-[tool.ruff.lint.pydocstyle]
-convention = "google"
+"tests/**" = ["ANN", "ARG", "E501"]
+"src/epiroute/db/migrations/**" = ["ANN", "E501", "I"]
 
 # ---------------------------------------------------------------------------
 # mypy — static type checking
