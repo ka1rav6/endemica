@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import date, datetime
 from types import MappingProxyType
 from typing import Final
 
@@ -29,7 +30,7 @@ DEFINITIONS: Final[tuple[DiseaseDefinition, ...]] = (
         "covid19",
         "COVID-19",
         "Respiratory virus",
-        (r"covid.?19", r"sars.?cov.?2", r"novel coronavirus", r"2019.?ncov"),
+        (r"covid.?19", r"sars.?cov.?2", r"2019.?ncov", r"novel coronavirus"),
     ),
     DiseaseDefinition(
         "sars",
@@ -438,10 +439,50 @@ def classify(*candidates: str | None) -> DiseaseDefinition | None:
     return None
 
 
-def resolve(title: str, *, label: str | None = None) -> tuple[str, str, str, str | None]:
-    """Return ``(key, name, family, source_label)`` for one report title."""
+# WHO published MERS as "novel coronavirus infection" from September 2012 until
+# it was renamed in May 2013, so that wording alone cannot decide the disease.
+# Anything before SARS-CoV-2 was identified is MERS unless the text names the
+# newer virus outright.
+_NOVEL_CORONAVIRUS: Final = re.compile(r"novel\s+coronavirus", re.IGNORECASE)
+_EXPLICIT_COVID: Final = re.compile(r"covid.?19|sars.?cov.?2|2019.?ncov", re.IGNORECASE)
+_COVID_ERA_START: Final = date(2019, 12, 1)
+
+
+def _as_date(value: date | datetime | None) -> date | None:
+    if value is None:
+        return None
+    return value.date() if isinstance(value, datetime) else value
+
+
+def disambiguate(
+    definition: DiseaseDefinition | None,
+    text: str,
+    published_at: date | datetime | None,
+) -> DiseaseDefinition | None:
+    """Re-route a match that only the publication date can settle."""
+    if definition is None or definition.key != "covid19":
+        return definition
+    published = _as_date(published_at)
+    if published is None or published >= _COVID_ERA_START:
+        return definition
+    if _NOVEL_CORONAVIRUS.search(text) and not _EXPLICIT_COVID.search(text):
+        return BY_KEY["mers"]
+    return definition
+
+
+def resolve(
+    title: str,
+    *,
+    label: str | None = None,
+    published_at: date | datetime | None = None,
+) -> tuple[str, str, str, str | None]:
+    """Return ``(key, name, family, source_label)`` for one report title.
+
+    ``published_at`` settles names the source reused for different diseases.
+    """
     source_label = label or extract_label(title)
-    definition = classify(source_label, clean_title(title))
+    cleaned = clean_title(title)
+    definition = disambiguate(classify(source_label, cleaned), cleaned, published_at)
     if definition is None:
         return OTHER_KEY, OTHER_NAME, OTHER_FAMILY, source_label
     return definition.key, definition.name, definition.family, source_label

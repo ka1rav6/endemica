@@ -6,6 +6,7 @@ from fastapi import Path as PathParam
 from epiroute.api.deps import DbSession
 from epiroute.schemas.errors import ErrorResponse
 from epiroute.schemas.outbreak import (
+    ActiveSummaryResponse,
     CountryProfileResponse,
     DiseaseHistoryOut,
     DiseaseSpreadResponse,
@@ -28,6 +29,20 @@ router = APIRouter(tags=["history"])
 )
 def list_disease_history(session: DbSession) -> list[DiseaseHistoryOut]:
     return service.list_disease_history(session)
+
+
+@router.get(
+    "/diseases/active",
+    response_model=ActiveSummaryResponse,
+    summary="Every disease reported anywhere in the last 90 days, as one picture",
+    description=(
+        "Drives the 'all active' view: which diseases are currently reported, which "
+        "countries they are in, and the combined case and death totals. Pair it with "
+        "`/risk/{iso3}?scope=active` for the matching probabilities."
+    ),
+)
+def get_active_summary(session: DbSession) -> ActiveSummaryResponse:
+    return service.get_active_summary(session)
 
 
 @router.get(

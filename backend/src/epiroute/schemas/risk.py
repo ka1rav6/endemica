@@ -50,6 +50,8 @@ class OriginContributionOut(BaseModel):
     prevalence_central: float
     prevalence_per_100k: float
     prevalence_value_type: ValueType
+    disease_key: str | None = None
+    disease_name: str | None = None
     effective_distance: float | None = None
     via_hubs: list[str] = Field(default_factory=list)
     reported_cases: int | None = None
@@ -99,6 +101,9 @@ class PathogenSummary(BaseModel):
 
     key: str | None
     label: str
+    scope: str = "disease"
+    active_disease_count: int | None = None
+    active_diseases: list[str] = Field(default_factory=list)
     disease_key: str | None = None
     disease_name: str | None = None
     disease_label: str | None = None
@@ -137,6 +142,7 @@ class RiskQuery(BaseModel):
     pathogen_key: str | None = None
     disease_label: str | None = None
     disease_key: str | None = None
+    scope: str = "disease"
     horizon_days: Annotated[float, Field(ge=1, le=365)] = 14.0
     underreporting_low: Annotated[float, Field(ge=1, le=100)] = 2.0
     underreporting_central: Annotated[float, Field(ge=1, le=100)] = 4.0

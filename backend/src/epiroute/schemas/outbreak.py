@@ -306,3 +306,47 @@ class CountryProfileResponse(BaseModel):
     report_count: int
     active_disease_count: int
     diseases: list[CountryDiseaseOut] = Field(default_factory=list)
+
+
+class ActiveDiseaseOut(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    disease_key: str
+    disease_name: str
+    pathogen_key: str | None = None
+    country_count: int
+    report_count: int
+    last_published_at: datetime | None = None
+
+
+class ActiveCountryOut(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    country_iso3: str
+    country_name: str
+    centroid_lat: float | None = None
+    centroid_lon: float | None = None
+    disease_count: int
+    report_count: int
+    cases_confirmed: int | None = None
+    deaths: int | None = None
+    last_published_at: datetime | None = None
+    disease_keys: list[str] = Field(default_factory=list)
+    disease_names: list[str] = Field(default_factory=list)
+
+
+class ActiveSummaryResponse(BaseModel):
+    """Everything reported anywhere in the recent window, as one picture."""
+
+    model_config = ConfigDict(frozen=True)
+
+    window_days: int
+    since: datetime
+    disease_count: int
+    country_count: int
+    report_count: int
+    cases_confirmed: int | None = None
+    deaths: int | None = None
+    diseases: list[ActiveDiseaseOut] = Field(default_factory=list)
+    countries: list[ActiveCountryOut] = Field(default_factory=list)
+    note: str

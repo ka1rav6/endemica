@@ -198,13 +198,47 @@ def _greater(a: int | None, b: int | None) -> int | None:
     return max(a, b)
 
 
+# A later report whose cumulative count sits this far below the running total
+# is counting a different outbreak, not revising the same one downwards.
+_NEW_EPISODE_RATIO = 0.9
+
+# One country can report the same disease again years later. A gap this long
+# separates two outbreaks even when the counts happen to keep rising.
+_NEW_EPISODE_GAP_DAYS = 365
+
+
+def _starts_new_episode(
+    point: CumulativePoint, best_cases: int | None, previous: CumulativePoint | None
+) -> bool:
+    """Whether this report belongs to a later outbreak than the running total.
+
+    Cumulative counts only ever rise inside one outbreak, so a figure well
+    below the running total means the source has moved on to a new episode.
+    Without this, a country's current outbreak inherits the peak of a far
+    larger one years earlier and reads as having no new cases at all.
+    """
+    if previous is not None:
+        gap = (point.published_at - previous.published_at).days
+        if gap > _NEW_EPISODE_GAP_DAYS:
+            return True
+    if best_cases is None or point.cases_confirmed is None:
+        return False
+    return point.cases_confirmed < best_cases * _NEW_EPISODE_RATIO
+
+
 def _running_max(series: list[CumulativePoint]) -> list[CumulativePoint]:
+    """Carry each cumulative count forward, restarting at every new outbreak."""
     best_cases: int | None = None
     best_deaths: int | None = None
+    previous: CumulativePoint | None = None
     out: list[CumulativePoint] = []
     for point in series:
-        best_cases = _greater(best_cases, point.cases_confirmed)
-        best_deaths = _greater(best_deaths, point.deaths)
+        if _starts_new_episode(point, best_cases, previous):
+            best_cases = point.cases_confirmed
+            best_deaths = point.deaths
+        else:
+            best_cases = _greater(best_cases, point.cases_confirmed)
+            best_deaths = _greater(best_deaths, point.deaths)
         out.append(
             CumulativePoint(
                 published_at=point.published_at,
@@ -215,6 +249,7 @@ def _running_max(series: list[CumulativePoint]) -> list[CumulativePoint]:
                 outbreak_started_on=point.outbreak_started_on,
             )
         )
+        previous = point
     return out
 
 
@@ -804,3 +839,116 @@ def countries_reporting_disease(
     if since:
         statement = statement.where(OutbreakReport.published_at >= since)
     return list(session.scalars(statement))
+
+
+@dataclass(frozen=True, slots=True)
+class ActiveDisease:
+    disease_key: str
+    disease_name: str
+    pathogen_key: str | None
+    country_count: int
+    report_count: int
+    last_published_at: datetime | None
+
+
+def active_diseases(session: Session, *, since: datetime) -> list[ActiveDisease]:
+    """Diseases with at least one grounded report since ``since``.
+
+    This is the set the "all active" view answers about, so it uses the same
+    grounding gate as every other number rather than counting bare mentions.
+    """
+    rows = session.execute(
+        select(
+            OutbreakReport.disease_key,
+            func.max(OutbreakReport.disease_name),
+            func.max(OutbreakReport.pathogen_key),
+            func.count(func.distinct(OutbreakObservation.country_iso3)),
+            func.count(func.distinct(OutbreakReport.id)),
+            func.max(OutbreakReport.published_at),
+        )
+        .join(OutbreakObservation, OutbreakObservation.report_id == OutbreakReport.id)
+        .where(
+            OutbreakReport.disease_key.is_not(None),
+            OutbreakReport.published_at >= since,
+            *_feeds_model(),
+        )
+        .group_by(OutbreakReport.disease_key)
+        .order_by(func.max(OutbreakReport.published_at).desc())
+    ).all()
+    return [
+        ActiveDisease(
+            disease_key=key,
+            disease_name=name or key,
+            pathogen_key=pathogen,
+            country_count=countries,
+            report_count=reports,
+            last_published_at=last,
+        )
+        for key, name, pathogen, countries, reports, last in rows
+        if key
+    ]
+
+
+@dataclass(frozen=True, slots=True)
+class ActiveCountryRecord:
+    country_iso3: str
+    disease_count: int
+    report_count: int
+    cases_confirmed: int | None
+    deaths: int | None
+    last_published_at: datetime | None
+    diseases: tuple[tuple[str, str], ...]
+
+
+def active_countries(session: Session, *, since: datetime) -> list[ActiveCountryRecord]:
+    """Every country with a grounded report since ``since``, and for which diseases."""
+    rows = session.execute(
+        select(
+            OutbreakObservation.country_iso3,
+            OutbreakReport.disease_key,
+            func.max(OutbreakReport.disease_name),
+            func.count(func.distinct(OutbreakReport.id)),
+            func.max(OutbreakObservation.cases_confirmed),
+            func.max(OutbreakObservation.deaths),
+            func.max(OutbreakReport.published_at),
+        )
+        .join(OutbreakReport, OutbreakObservation.report_id == OutbreakReport.id)
+        .where(
+            OutbreakReport.disease_key.is_not(None),
+            OutbreakReport.published_at >= since,
+            *_feeds_model(),
+        )
+        .group_by(OutbreakObservation.country_iso3, OutbreakReport.disease_key)
+    ).all()
+
+    grouped: dict[str, dict[str, Any]] = {}
+    for iso3, key, name, reports, cases, deaths, last in rows:
+        bucket = grouped.setdefault(
+            iso3,
+            {"reports": 0, "cases": 0, "deaths": 0, "last": None, "diseases": []},
+        )
+        bucket["reports"] += reports
+        # Each disease contributes its own peak; summing reports would
+        # multiply-count one outbreak's cumulative figures.
+        if cases is not None:
+            bucket["cases"] += int(cases)
+        if deaths is not None:
+            bucket["deaths"] += int(deaths)
+        if last is not None and (bucket["last"] is None or last > bucket["last"]):
+            bucket["last"] = last
+        bucket["diseases"].append((key, name or key))
+
+    records = [
+        ActiveCountryRecord(
+            country_iso3=iso3,
+            disease_count=len(bucket["diseases"]),
+            report_count=bucket["reports"],
+            cases_confirmed=bucket["cases"] or None,
+            deaths=bucket["deaths"] or None,
+            last_published_at=bucket["last"],
+            diseases=tuple(sorted(bucket["diseases"], key=lambda entry: entry[1])),
+        )
+        for iso3, bucket in grouped.items()
+    ]
+    records.sort(key=lambda r: (r.disease_count, r.cases_confirmed or 0), reverse=True)
+    return records

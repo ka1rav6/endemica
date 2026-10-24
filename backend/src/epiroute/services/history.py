@@ -10,6 +10,9 @@ from epiroute.datasets.iso import country_name
 from epiroute.repositories import outbreaks as repo
 from epiroute.repositories import reference as reference_repo
 from epiroute.schemas.outbreak import (
+    ActiveCountryOut,
+    ActiveDiseaseOut,
+    ActiveSummaryResponse,
     CountryDiseaseOut,
     CountryProfileResponse,
     CountrySpreadOut,
@@ -17,8 +20,12 @@ from epiroute.schemas.outbreak import (
     DiseaseSpreadResponse,
     DiseaseTimelineOut,
 )
+from epiroute.services.risk import PRESENCE_LOOKBACK_DAYS
 
-ACTIVE_WINDOW_DAYS = 180
+# One definition of "active" everywhere: the same window the importation model
+# treats as current, so the disease list, the map and the probabilities never
+# disagree about which outbreaks are in scope.
+ACTIVE_WINDOW_DAYS = PRESENCE_LOOKBACK_DAYS
 
 _NOTE = (
     "Counts are cumulative as of each report's publication date and are summed "
@@ -152,4 +159,63 @@ def get_country_profile(session: Session, country_iso3: str) -> CountryProfileRe
         report_count=sum(d.report_count for d in diseases),
         active_disease_count=sum(1 for d in diseases if d.is_active),
         diseases=diseases,
+    )
+
+
+ACTIVE_RISK_WINDOW_DAYS = ACTIVE_WINDOW_DAYS
+
+_ACTIVE_NOTE = (
+    f"Active means a grounded report published in the last {ACTIVE_WINDOW_DAYS} days, "
+    "the same window "
+    "the importation model uses. A country's case figure is the sum of each active "
+    "disease's own cumulative total, so it combines separate outbreaks rather than "
+    "re-counting one."
+)
+
+
+def get_active_summary(session: Session) -> ActiveSummaryResponse:
+    since = utc_now() - timedelta(days=ACTIVE_RISK_WINDOW_DAYS)
+    diseases = repo.active_diseases(session, since=since)
+    countries = repo.active_countries(session, since=since)
+
+    country_rows: list[ActiveCountryOut] = []
+    for record in countries:
+        country = reference_repo.get_country(session, record.country_iso3)
+        country_rows.append(
+            ActiveCountryOut(
+                country_iso3=record.country_iso3,
+                country_name=country.name if country else country_name(record.country_iso3),
+                centroid_lat=country.centroid_lat if country else None,
+                centroid_lon=country.centroid_lon if country else None,
+                disease_count=record.disease_count,
+                report_count=record.report_count,
+                cases_confirmed=record.cases_confirmed,
+                deaths=record.deaths,
+                last_published_at=record.last_published_at,
+                disease_keys=[key for key, _ in record.diseases],
+                disease_names=[name for _, name in record.diseases],
+            )
+        )
+
+    return ActiveSummaryResponse(
+        window_days=ACTIVE_RISK_WINDOW_DAYS,
+        since=since,
+        disease_count=len(diseases),
+        country_count=len(country_rows),
+        report_count=sum(disease.report_count for disease in diseases),
+        cases_confirmed=sum(row.cases_confirmed or 0 for row in country_rows) or None,
+        deaths=sum(row.deaths or 0 for row in country_rows) or None,
+        diseases=[
+            ActiveDiseaseOut(
+                disease_key=disease.disease_key,
+                disease_name=disease.disease_name,
+                pathogen_key=disease.pathogen_key,
+                country_count=disease.country_count,
+                report_count=disease.report_count,
+                last_published_at=disease.last_published_at,
+            )
+            for disease in diseases
+        ],
+        countries=country_rows,
+        note=_ACTIVE_NOTE,
     )

@@ -485,7 +485,314 @@ def _effective_distances(
     return {p.origin: (p.distance, p.intermediate_nodes) for p in ranked}
 
 
+ACTIVE_SCOPE = "active"
+
+
+def _aggregate_presence(
+    session: Session, destination_iso3: str, diseases: list[outbreak_repo.ActiveDisease]
+) -> tuple[LocalPresence, list[str]]:
+    """Presence across every active disease at once.
+
+    Cases are summed over diseases because each disease's figure is its own
+    cumulative peak; they are separate outbreaks, not one count re-counted.
+    """
+    present: list[tuple[outbreak_repo.ActiveDisease, LocalPresence]] = []
+    for disease in diseases:
+        local = _build_presence(
+            session,
+            destination_iso3,
+            disease.pathogen_key,
+            disease_key=disease.disease_key,
+        )
+        if local.status is PresenceStatus.REPORTED:
+            present.append((disease, local))
+
+    if not present:
+        return (
+            LocalPresence(
+                status=PresenceStatus.NOT_REPORTED,
+                value_type=ValueType.OBSERVED,
+                detail=(
+                    f"None of the {len(diseases)} currently active diseases has a grounded "
+                    f"case count attributed to this country. Absence of a report is not "
+                    f"evidence of absence of disease."
+                ),
+                report_count=0,
+            ),
+            [],
+        )
+
+    cases = sum(
+        local.cases_confirmed.value
+        for _, local in present
+        if local.cases_confirmed is not None and local.cases_confirmed.value is not None
+    )
+    deaths = sum(
+        local.deaths.value
+        for _, local in present
+        if local.deaths is not None and local.deaths.value is not None
+    )
+    urls: list[str] = []
+    for _, local in present:
+        for url in local.source_urls:
+            if str(url) not in urls:
+                urls.append(str(url))
+    names = [disease.disease_name for disease, _ in present]
+    latest = max(
+        (local.last_reported_at for _, local in present if local.last_reported_at is not None),
+        default=None,
+    )
+
+    return (
+        LocalPresence(
+            status=PresenceStatus.REPORTED,
+            value_type=ValueType.OBSERVED,
+            last_reported_at=latest,
+            cases_confirmed=(
+                Quantity.of(float(cases), ValueType.OBSERVED, unit="cases")
+                if cases
+                else Quantity.unavailable(UnavailableReason.NO_LOCAL_CASE_DATA)
+            ),
+            deaths=(
+                Quantity.of(float(deaths), ValueType.OBSERVED, unit="deaths")
+                if deaths
+                else Quantity.unavailable(UnavailableReason.NO_LOCAL_CASE_DATA)
+            ),
+            report_count=sum(local.report_count for _, local in present),
+            source_urls=urls[:8],  # type: ignore[arg-type]
+            detail=(
+                f"{len(present)} of the {len(diseases)} currently active diseases are "
+                f"reported here: {', '.join(names)}. Case and death figures are the sum "
+                f"of each disease's own grounded total."
+            ),
+        ),
+        names,
+    )
+
+
+def compute_active_risk(session: Session, destination_iso3: str, query: RiskQuery) -> RiskResponse:
+    """Risk of importing *any* currently active disease, summed over all of them.
+
+    Arrival rates are additive across independent origin-disease pairs, so the
+    aggregate rate is their sum and the probability follows from it. Local
+    establishment is deliberately left unavailable: the pathogens have
+    different reproduction numbers and a single figure would not mean anything.
+    """
+    destination = reference_repo.get_country(session, destination_iso3)
+    if destination is None:
+        raise NotFoundError("country", destination_iso3)
+
+    window = utc_now() - timedelta(days=PRESENCE_LOOKBACK_DAYS)
+    diseases = outbreak_repo.active_diseases(session, since=window)
+    warnings: list[ResponseWarning] = [
+        ResponseWarning(
+            code="aggregate_scope",
+            message=(
+                f"Every number here covers all {len(diseases)} diseases reported anywhere "
+                f"in the last {PRESENCE_LOOKBACK_DAYS} days at once, not one disease. "
+                f"Select a disease to ask about it on its own."
+            ),
+            severity="info",
+        )
+    ]
+
+    horizon = query.horizon_days
+    rate_low = rate_central = rate_high = 0.0
+    contributions: list[OriginContributionOut] = []
+    excluded: list[dict[str, str]] = []
+    considered = 0
+    usable_origins = 0
+    uses_modelled_flows = False
+
+    for disease in diseases:
+        focus = _Focus(
+            disease_key=disease.disease_key,
+            disease_name=disease.disease_name,
+            disease_label=disease.disease_name,
+            disease_family=_family_for(disease.disease_key),
+            pathogen_key=disease.pathogen_key,
+            source=ACTIVE_SCOPE,
+        )
+        profile, _, _ = _profile_for(focus)
+        alpha = query.alpha if query.alpha is not None else profile.alpha.central
+        alpha_low = query.alpha if query.alpha is not None else profile.alpha.low
+        alpha_high = query.alpha if query.alpha is not None else profile.alpha.high
+
+        origins, disease_excluded, disease_considered, _ = _collect_origins(
+            session, destination.iso3, profile, query, focus
+        )
+        considered += disease_considered
+        for entry in disease_excluded:
+            excluded.append({**entry, "disease": disease.disease_name})
+        if not origins:
+            continue
+
+        usable_origins += len(origins)
+        uses_modelled_flows = uses_modelled_flows or any(
+            origin.passengers_value_type is ValueType.ESTIMATED for origin in origins
+        )
+        low, _ = _rate_for_scenario(origins, alpha_low, query.sigma, "low")
+        central, central_contributions = _rate_for_scenario(origins, alpha, query.sigma, "central")
+        high, _ = _rate_for_scenario(origins, alpha_high, query.sigma, "high")
+        rate_low += low
+        rate_central += central
+        rate_high += high
+
+        by_iso3 = {origin.iso3: origin for origin in origins}
+        for contribution in central_contributions:
+            origin = by_iso3[contribution.origin_iso3]
+            contributions.append(
+                OriginContributionOut(
+                    origin_iso3=origin.iso3,
+                    origin_name=country_name(origin.iso3),
+                    arrival_rate_per_day=contribution.rate_per_day,
+                    share_of_total=0.0,
+                    passengers_per_day=contribution.passengers_per_day,
+                    passengers_value_type=origin.passengers_value_type,
+                    passengers_source=origin.passengers_source,
+                    prevalence_central=origin.prevalence.central,
+                    prevalence_per_100k=origin.prevalence.central * 100_000,
+                    prevalence_value_type=ValueType.ESTIMATED,
+                    disease_key=disease.disease_key,
+                    disease_name=disease.disease_name,
+                    reported_cases=origin.reported_cases,
+                    report_url=origin.report_url,  # type: ignore[arg-type]
+                    report_published_at=origin.report_published_at,  # type: ignore[arg-type]
+                )
+            )
+
+    contributions.sort(key=lambda entry: entry.arrival_rate_per_day, reverse=True)
+    top = [
+        contribution.model_copy(
+            update={
+                "share_of_total": (
+                    contribution.arrival_rate_per_day / rate_central if rate_central > 0 else 0.0
+                )
+            }
+        )
+        for contribution in contributions[: query.max_origins]
+    ]
+
+    presence, present_names = _aggregate_presence(session, destination.iso3, diseases)
+    band_basis = (
+        f"scenario range: under-reporting {query.underreporting_low:g}x-"
+        f"{query.underreporting_high:g}x, summed over {len(diseases)} active diseases"
+        + (", modelled passenger flows widened by the gravity model" if uses_modelled_flows else "")
+        + ". Not a confidence interval."
+    )
+
+    if rate_central > 0:
+        importation = ImportationRisk(
+            probability=BandedQuantity(
+                low=imp.probability_at_least_one_arrival(rate_low, horizon),
+                central=imp.probability_at_least_one_arrival(rate_central, horizon),
+                high=imp.probability_at_least_one_arrival(rate_high, horizon),
+                value_type=ValueType.MODELLED,
+                unit="probability",
+                band_basis=band_basis,
+                note="Probability that at least one infected traveller arrives with any "
+                "of the active diseases.",
+            ),
+            arrival_rate_per_day=BandedQuantity(
+                low=rate_low,
+                central=rate_central,
+                high=rate_high,
+                value_type=ValueType.MODELLED,
+                unit="infected arrivals/day",
+                band_basis=band_basis,
+            ),
+            horizon_days=horizon,
+            is_saturated=imp.is_saturated(rate_central, horizon),
+            origin_count_considered=considered,
+            origin_count_usable=usable_origins,
+            top_origins=top,
+            excluded_origins=excluded[:40],
+        )
+    else:
+        importation = ImportationRisk(
+            probability=BandedQuantity.unavailable(
+                UnavailableReason.NO_ACTIVE_OUTBREAK
+                if considered == 0
+                else UnavailableReason.NO_PREVALENCE_DATA,
+                note=(
+                    "No active disease has an origin with both a grounded prevalence "
+                    "estimate and a passenger flow to this destination."
+                ),
+            ),
+            arrival_rate_per_day=BandedQuantity.unavailable(UnavailableReason.NO_PREVALENCE_DATA),
+            horizon_days=horizon,
+            origin_count_considered=considered,
+            origin_count_usable=0,
+            excluded_origins=excluded[:40],
+        )
+
+    profile = get_profile(DEFAULT_PROFILE_KEY)
+    assert profile is not None
+    establishment = EstablishmentRisk(
+        probability_per_introduction=BandedQuantity.unavailable(
+            UnavailableReason.MODEL_NOT_APPLICABLE
+        ),
+        probability_within_horizon=BandedQuantity.unavailable(
+            UnavailableReason.MODEL_NOT_APPLICABLE
+        ),
+        horizon_days=horizon,
+        reproduction_number_used=BandedQuantity.unavailable(UnavailableReason.MODEL_NOT_APPLICABLE),
+        dispersion_used=BandedQuantity.unavailable(UnavailableReason.MODEL_NOT_APPLICABLE),
+        subcritical=False,
+        detail=(
+            "Establishment is not reported across diseases. Each pathogen has its own "
+            "reproduction number and dispersion, so one combined figure would not "
+            "describe any of them. Select a single disease to see it."
+        ),
+    )
+
+    focus = _Focus(
+        disease_key=None,
+        disease_name=f"{len(diseases)} active diseases",
+        disease_label=None,
+        disease_family=None,
+        pathogen_key=None,
+        source=ACTIVE_SCOPE,
+    )
+    response = _assemble(
+        destination,
+        profile,
+        None,
+        focus,
+        query,
+        presence,
+        importation,
+        establishment,
+        [],
+        warnings,
+        session,
+        query.alpha if query.alpha is not None else profile.alpha.central,
+        profile.reproduction_number.central,
+        profile.dispersion_k.central,
+    )
+    return response.model_copy(
+        update={
+            "pathogen": response.pathogen.model_copy(
+                update={
+                    "scope": ACTIVE_SCOPE,
+                    "label": f"All {len(diseases)} active diseases",
+                    "active_disease_count": len(diseases),
+                    "active_diseases": [disease.disease_name for disease in diseases],
+                    "disease_name": (
+                        ", ".join(present_names)
+                        if present_names
+                        else f"{len(diseases)} active diseases"
+                    ),
+                }
+            )
+        }
+    )
+
+
 def compute_risk(session: Session, destination_iso3: str, query: RiskQuery) -> RiskResponse:
+    if query.scope == ACTIVE_SCOPE:
+        return compute_active_risk(session, destination_iso3, query)
+
     destination = reference_repo.get_country(session, destination_iso3)
     if destination is None:
         raise NotFoundError("country", destination_iso3)

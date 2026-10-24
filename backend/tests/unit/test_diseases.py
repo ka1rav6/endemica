@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 
 from epiroute.epidemiology.diseases import OTHER_KEY, classify, extract_label, resolve
@@ -77,3 +79,36 @@ class TestCanonicalGrouping:
     def test_resolve_prefers_an_explicit_label(self) -> None:
         _, _, _, label = resolve("Cholera – Nigeria", label="Vibrio cholerae O1")
         assert label == "Vibrio cholerae O1"
+
+
+class TestNamesTheSourceReused:
+    """WHO called MERS "novel coronavirus infection" until May 2013."""
+
+    @pytest.mark.parametrize(
+        "published",
+        [datetime(2012, 9, 23, tzinfo=UTC), datetime(2013, 5, 23, tzinfo=UTC)],
+    )
+    def test_novel_coronavirus_before_2019_is_mers(self, published: datetime) -> None:
+        key, name, _, _ = resolve("Novel coronavirus infection - update", published_at=published)
+        assert key == "mers"
+        assert name == "MERS-CoV"
+
+    @pytest.mark.parametrize(
+        "published",
+        [datetime(2020, 1, 12, tzinfo=UTC), datetime(2021, 6, 1, tzinfo=UTC)],
+    )
+    def test_novel_coronavirus_from_2020_is_covid(self, published: datetime) -> None:
+        assert resolve("Novel Coronavirus - China", published_at=published)[0] == "covid19"
+
+    def test_an_explicit_covid_name_is_never_rerouted(self) -> None:
+        # A back-dated or undated report that names SARS-CoV-2 outright stays COVID-19.
+        early = datetime(2013, 1, 1, tzinfo=UTC)
+        assert resolve("SARS-CoV-2 Variant - United Kingdom", published_at=early)[0] == "covid19"
+        assert resolve("COVID-19 - Global Situation", published_at=early)[0] == "covid19"
+
+    def test_without_a_date_the_modern_reading_is_kept(self) -> None:
+        assert resolve("Novel coronavirus infection - update")[0] == "covid19"
+
+    def test_other_diseases_are_untouched_by_the_date(self) -> None:
+        old = datetime(2001, 1, 1, tzinfo=UTC)
+        assert resolve("Cholera in Uganda", published_at=old)[0] == "cholera"

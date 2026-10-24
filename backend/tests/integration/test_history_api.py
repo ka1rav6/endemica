@@ -353,3 +353,67 @@ class TestCountryProfile:
 
     def test_an_unknown_country_is_a_404(self, client: TestClient) -> None:
         assert client.get("/api/v1/countries/ZZZ/profile").status_code == 404
+
+
+class TestAllActiveDiseasesAtOnce:
+    """The "active" view: every current disease answered as one question."""
+
+    def test_the_summary_lists_only_currently_reported_diseases(self, client: TestClient) -> None:
+        body = _get(client, "/api/v1/diseases/active")
+        keys = {disease["disease_key"] for disease in body["diseases"]}
+        assert {"redfever", "bluepox"} <= keys
+        assert "oldplague" not in keys
+
+    def test_the_summary_says_which_countries_and_which_diseases(self, client: TestClient) -> None:
+        body = _get(client, "/api/v1/diseases/active")
+        by_iso3 = {country["country_iso3"]: country for country in body["countries"]}
+        assert by_iso3[ALPHA]["disease_names"] == ["Red fever"]
+        assert by_iso3[BETA]["disease_names"] == ["Blue pox"]
+        assert QUIET not in by_iso3
+
+    def test_a_country_case_total_sums_its_active_diseases(self, client: TestClient) -> None:
+        body = _get(client, "/api/v1/diseases/active")
+        alpha = next(c for c in body["countries"] if c["country_iso3"] == ALPHA)
+        # Two cumulative Red fever reports, so the peak counts once.
+        assert alpha["cases_confirmed"] == 2400
+
+    def test_importation_covers_every_active_disease_at_once(self, client: TestClient) -> None:
+        single = _get(client, f"/api/v1/risk/{BETA}", disease_key="redfever")
+        aggregate = _get(client, f"/api/v1/risk/{BETA}", scope="active")
+        assert aggregate["pathogen"]["scope"] == "active"
+        assert {"Red fever", "Blue pox"} <= set(aggregate["pathogen"]["active_diseases"])
+        # Adding a disease can only add arrivals, never remove them.
+        assert (
+            aggregate["importation"]["arrival_rate_per_day"]["central"]
+            >= single["importation"]["arrival_rate_per_day"]["central"]
+        )
+
+    def test_each_origin_is_labelled_with_the_disease_it_carries(self, client: TestClient) -> None:
+        body = _get(client, f"/api/v1/risk/{BETA}", scope="active")
+        origins = body["importation"]["top_origins"]
+        assert origins, "ALPHA flies to BETA and reports an active disease"
+        assert {origin["disease_name"] for origin in origins} == {"Red fever"}
+
+    def test_presence_reports_every_active_disease_found_here(self, client: TestClient) -> None:
+        body = _get(client, f"/api/v1/risk/{ALPHA}", scope="active")
+        assert body["presence"]["status"] == "reported"
+        assert "Red fever" in body["presence"]["detail"]
+
+    def test_establishment_is_withheld_rather_than_averaged(self, client: TestClient) -> None:
+        """Pathogens have different R and k, so one combined figure means nothing."""
+        body = _get(client, f"/api/v1/risk/{BETA}", scope="active")
+        establishment = body["establishment"]
+        assert establishment["probability_within_horizon"]["central"] is None
+        assert (
+            establishment["probability_within_horizon"]["unavailable_reason"]
+            == "model_not_applicable"
+        )
+
+    def test_the_aggregate_scope_is_declared_in_the_warnings(self, client: TestClient) -> None:
+        body = _get(client, f"/api/v1/risk/{ALPHA}", scope="active")
+        codes = {warning["code"] for warning in body["warnings"]}
+        assert "aggregate_scope" in codes
+
+    def test_an_unknown_scope_is_rejected(self, client: TestClient) -> None:
+        response = client.get(f"/api/v1/risk/{ALPHA}", params={"scope": "everything"})
+        assert response.status_code == 422

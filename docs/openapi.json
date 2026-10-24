@@ -1,6 +1,231 @@
 {
   "components": {
     "schemas": {
+      "ActiveCountryOut": {
+        "properties": {
+          "cases_confirmed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cases Confirmed"
+          },
+          "centroid_lat": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Centroid Lat"
+          },
+          "centroid_lon": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Centroid Lon"
+          },
+          "country_iso3": {
+            "title": "Country Iso3",
+            "type": "string"
+          },
+          "country_name": {
+            "title": "Country Name",
+            "type": "string"
+          },
+          "deaths": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deaths"
+          },
+          "disease_count": {
+            "title": "Disease Count",
+            "type": "integer"
+          },
+          "disease_keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Disease Keys",
+            "type": "array"
+          },
+          "disease_names": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Disease Names",
+            "type": "array"
+          },
+          "last_published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Published At"
+          },
+          "report_count": {
+            "title": "Report Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "country_iso3",
+          "country_name",
+          "disease_count",
+          "report_count"
+        ],
+        "title": "ActiveCountryOut",
+        "type": "object"
+      },
+      "ActiveDiseaseOut": {
+        "properties": {
+          "country_count": {
+            "title": "Country Count",
+            "type": "integer"
+          },
+          "disease_key": {
+            "title": "Disease Key",
+            "type": "string"
+          },
+          "disease_name": {
+            "title": "Disease Name",
+            "type": "string"
+          },
+          "last_published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Published At"
+          },
+          "pathogen_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pathogen Key"
+          },
+          "report_count": {
+            "title": "Report Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "disease_key",
+          "disease_name",
+          "country_count",
+          "report_count"
+        ],
+        "title": "ActiveDiseaseOut",
+        "type": "object"
+      },
+      "ActiveSummaryResponse": {
+        "description": "Everything reported anywhere in the recent window, as one picture.",
+        "properties": {
+          "cases_confirmed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cases Confirmed"
+          },
+          "countries": {
+            "items": {
+              "$ref": "#/components/schemas/ActiveCountryOut"
+            },
+            "title": "Countries",
+            "type": "array"
+          },
+          "country_count": {
+            "title": "Country Count",
+            "type": "integer"
+          },
+          "deaths": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deaths"
+          },
+          "disease_count": {
+            "title": "Disease Count",
+            "type": "integer"
+          },
+          "diseases": {
+            "items": {
+              "$ref": "#/components/schemas/ActiveDiseaseOut"
+            },
+            "title": "Diseases",
+            "type": "array"
+          },
+          "note": {
+            "title": "Note",
+            "type": "string"
+          },
+          "report_count": {
+            "title": "Report Count",
+            "type": "integer"
+          },
+          "since": {
+            "format": "date-time",
+            "title": "Since",
+            "type": "string"
+          },
+          "window_days": {
+            "title": "Window Days",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "window_days",
+          "since",
+          "disease_count",
+          "country_count",
+          "report_count",
+          "note"
+        ],
+        "title": "ActiveSummaryResponse",
+        "type": "object"
+      },
       "Assumption": {
         "description": "One assumption behind a published value, shown in the UI next to it.\n\nEvery model response carries the full list, so a user can see which numbers\nare inputs they chose and which are defaults EpiRoute supplied.",
         "properties": {
@@ -1871,6 +2096,28 @@
             "title": "Arrival Rate Per Day",
             "type": "number"
           },
+          "disease_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disease Key"
+          },
+          "disease_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disease Name"
+          },
           "effective_distance": {
             "anyOf": [
               {
@@ -2198,6 +2445,24 @@
       },
       "PathogenSummary": {
         "properties": {
+          "active_disease_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Disease Count"
+          },
+          "active_diseases": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Active Diseases",
+            "type": "array"
+          },
           "confidence": {
             "anyOf": [
               {
@@ -2301,6 +2566,11 @@
             },
             "title": "References",
             "type": "array"
+          },
+          "scope": {
+            "default": "disease",
+            "title": "Scope",
+            "type": "string"
           }
         },
         "required": [
@@ -3116,6 +3386,28 @@
         ]
       }
     },
+    "/api/v1/diseases/active": {
+      "get": {
+        "description": "Drives the 'all active' view: which diseases are currently reported, which countries they are in, and the combined case and death totals. Pair it with `/risk/{iso3}?scope=active` for the matching probabilities.",
+        "operationId": "get_active_summary_api_v1_diseases_active_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActiveSummaryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Every disease reported anywhere in the last 90 days, as one picture",
+        "tags": [
+          "history"
+        ]
+      }
+    },
     "/api/v1/diseases/history": {
       "get": {
         "description": "One row per canonical disease, covering the whole WHO Disease Outbreak News archive rather than only current activity. Wording variants in the source titles are grouped onto one `disease_key`, and `source_labels` lists the variants that were folded in.",
@@ -3500,6 +3792,19 @@
               ],
               "description": "Canonical disease key from /diseases/history. This is the precise filter; it groups the source's wording variants onto one disease.",
               "title": "Disease Key"
+            }
+          },
+          {
+            "description": "'disease' answers about one disease. 'active' sums over every disease reported anywhere in the last 90 days, so importation covers arriving with any of them; establishment is then not reported.",
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "default": "disease",
+              "description": "'disease' answers about one disease. 'active' sums over every disease reported anywhere in the last 90 days, so importation covers arriving with any of them; establishment is then not reported.",
+              "pattern": "^(disease|active)$",
+              "title": "Scope",
+              "type": "string"
             }
           },
           {

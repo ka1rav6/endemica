@@ -91,15 +91,19 @@ def parse_don_item(
     summary = html_to_text(str(item.get("Summary") or "")) or html_to_text(
         str(item.get("Overview") or "")
     )
-    disease_key, disease_name, disease_family, label = disease_catalog.resolve(title)
+    published_at = _parse_timestamp(item.get("PublicationDateAndTime")) or _parse_timestamp(
+        item.get("PublicationDate")
+    )
+    disease_key, disease_name, disease_family, label = disease_catalog.resolve(
+        title, published_at=published_at
+    )
 
     return DonRecord(
         source_identifier=identifier,
         url_name=url_name,
         title=title,
         source_url=settings.who_don_item_url_template.format(url_name=url_name),
-        published_at=_parse_timestamp(item.get("PublicationDateAndTime"))
-        or _parse_timestamp(item.get("PublicationDate")),
+        published_at=published_at,
         retrieved_at=retrieved_at,
         disease_label=label,
         disease_key=disease_key,
