@@ -379,3 +379,31 @@ class TestValidation:
                 underreporting=(10.0, 2.0, 4.0),
                 as_of=NOW,
             )
+
+
+class TestAsOfCutoff:
+    def test_a_report_after_the_forecast_date_is_excluded(self) -> None:
+        result = prevalence_from_series(
+            [
+                ReportedCount(_days_ago(10), 100),
+                ReportedCount(NOW + timedelta(days=3), 400),
+            ],
+            population=POP,
+            infectious_period_days=7.0,
+            as_of=NOW,
+        )
+        assert isinstance(result, PrevalenceEstimate)
+        assert result.reported_cases == 100
+
+    def test_reports_less_than_a_day_apart_are_not_differenced(self) -> None:
+        result = prevalence_from_series(
+            [
+                ReportedCount(_days_ago(5), 100),
+                ReportedCount(_days_ago(5) + timedelta(hours=6), 180),
+            ],
+            population=POP,
+            infectious_period_days=7.0,
+            as_of=NOW,
+        )
+        assert isinstance(result, PrevalenceEstimate)
+        assert result.method is PrevalenceMethod.RECENT_WINDOW

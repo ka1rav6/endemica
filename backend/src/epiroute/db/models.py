@@ -225,6 +225,10 @@ class OutbreakReport(Base, TimestampMixin):
     )
     source_url: Mapped[str] = mapped_column(Text, nullable=False)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    data_as_of: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        comment="When the source says the counts were current, if not the publication time.",
+    )
     retrieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     license_note: Mapped[str | None] = mapped_column(Text)
 
@@ -334,6 +338,11 @@ class OutbreakObservation(Base, TimestampMixin):
         JSONB, comment="Per-field grounding verdicts from epiroute.ingestion.grounding."
     )
     value_type: Mapped[ValueType] = mapped_column(_VALUE_TYPE_ENUM, nullable=False)
+    data_as_of: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    corroboration_status: Mapped[str | None] = mapped_column(
+        String(32),
+        comment="corroborated, single_source, conflict, or gross_conflict.",
+    )
 
     __table_args__ = (
         CheckConstraint(
@@ -404,6 +413,12 @@ class CountryFlow(Base, TimestampMixin):
     )
     direct_route_count: Mapped[int | None] = mapped_column(
         Integer, comment="Scheduled airport-pair routes behind this flow (OpenFlights topology)."
+    )
+    cross_check_source: Mapped[str | None] = mapped_column(
+        String(64), comment="Second passenger source this flow was compared with, when one exists."
+    )
+    cross_check_ratio: Mapped[float | None] = mapped_column(
+        Float, comment="This source divided by the cross-check source. Near 1 means they agree."
     )
 
     __table_args__ = (
@@ -532,3 +547,25 @@ class PolicyFlag(Base, TimestampMixin):
         ),
         {"comment": "Human-confirmed border measures feeding the sigma term."},
     )
+
+
+class ObservationCorroboration(Base):
+    """One comparison between two sources' counts for the same place and disease."""
+
+    __tablename__ = "observation_corroborations"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    primary_observation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("outbreak_observations.id", ondelete="CASCADE"), nullable=False
+    )
+    other_observation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("outbreak_observations.id", ondelete="CASCADE"), nullable=False
+    )
+    metric: Mapped[str] = mapped_column(String(32), nullable=False)
+    primary_value: Mapped[float] = mapped_column(Float, nullable=False)
+    other_value: Mapped[float] = mapped_column(Float, nullable=False)
+    aligned_value: Mapped[float | None] = mapped_column(Float)
+    date_gap_days: Mapped[float | None] = mapped_column(Float)
+    relative_difference: Mapped[float | None] = mapped_column(Float)
+    verdict: Mapped[str] = mapped_column(String(32), nullable=False)
+    rule_version: Mapped[str] = mapped_column(String(16), nullable=False, default="1")

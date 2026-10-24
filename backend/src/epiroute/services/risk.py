@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, replace
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
@@ -24,6 +24,7 @@ from epiroute.epidemiology.profiles import (
     get_profile,
     match_profile_key,
 )
+from epiroute.epidemiology.travel_index import TravelIndexInputs, compute_travel_index
 from epiroute.repositories import outbreaks as outbreak_repo
 from epiroute.repositories import reference as reference_repo
 from epiroute.schemas.common import (
@@ -45,11 +46,20 @@ from epiroute.schemas.risk import (
     RiskQuery,
     RiskResponse,
     ScenarioMarker,
+    TravelIndex,
+    TravelIndexComponent,
 )
 
 logger = logging.getLogger(__name__)
 
 MODEL_VERSION = f"epiroute-{__version__}"
+
+
+def _calibration_status() -> str:
+    from epiroute.calibration.train import calibration_status
+
+    return calibration_status()
+
 
 DISCLAIMER = (
     "Situational awareness and education only. Not a diagnostic tool, not an official "
@@ -238,6 +248,7 @@ def _build_presence(
     *,
     disease_label: str | None = None,
     disease_key: str | None = None,
+    as_of: datetime | None = None,
 ) -> LocalPresence:
     rows = outbreak_repo.verified_observations_for_country(
         session,
@@ -258,12 +269,19 @@ def _build_presence(
             report_count=0,
         )
 
-    cutoff = utc_now() - timedelta(days=PRESENCE_LOOKBACK_DAYS)
-    recent = [
+    moment = as_of or utc_now()
+    visible = [
         (obs, rep)
         for obs, rep in rows
-        if rep.published_at is not None and rep.published_at >= cutoff
+        if outbreak_repo.published_at_or_before(rep.published_at, moment)
     ]
+    cutoff = moment - timedelta(days=PRESENCE_LOOKBACK_DAYS)
+    recent = []
+    for obs, rep in visible:
+        published = rep.published_at
+        if published is not None and outbreak_repo.published_at_or_before(cutoff, published):
+            recent.append((obs, rep))
+    rows = visible
     considered = recent or rows
     latest = considered[0][1]
     best_cases = max(
@@ -314,16 +332,20 @@ def _origin_prevalence(
     query: RiskQuery,
     population: int,
     focus: _Focus,
+    *,
+    as_of: datetime | None = None,
 ) -> prev.PrevalenceOutcome:
     if not profile.key and not focus.disease_key:
         return prev.PrevalenceUnavailable("no_pathogen", "no pathogen profile selected")
 
+    moment = as_of or query.as_of or utc_now()
     series = outbreak_repo.cumulative_series(
         session,
         origin_iso3,
         profile.key or "",
         disease_label=focus.disease_label,
         disease_key=focus.disease_key,
+        as_of=moment,
     )
     points = [
         prev.ReportedCount(
@@ -344,7 +366,7 @@ def _origin_prevalence(
         population=population,
         infectious_period_days=profile.infectious_period_days,
         underreporting=band,
-        as_of=utc_now(),
+        as_of=moment,
     )
     if isinstance(outcome, prev.PrevalenceUnavailable) and outcome.reason == "report_too_old":
         relaxed = prev.prevalence_from_series(
@@ -352,7 +374,7 @@ def _origin_prevalence(
             population=population,
             infectious_period_days=profile.infectious_period_days,
             underreporting=band,
-            as_of=utc_now(),
+            as_of=moment,
             max_report_age_days=prev.STALE_REPORT_MAX_AGE_DAYS,
         )
         if isinstance(relaxed, prev.PrevalenceEstimate):
@@ -375,8 +397,11 @@ def _collect_origins(
     profile: PathogenProfile,
     query: RiskQuery,
     focus: _Focus,
+    *,
+    as_of: datetime | None = None,
 ) -> tuple[list[_OriginInput], list[dict[str, str]], int, bool]:
-    window = utc_now() - timedelta(days=PRESENCE_LOOKBACK_DAYS)
+    moment = as_of or query.as_of or utc_now()
+    window = moment - timedelta(days=PRESENCE_LOOKBACK_DAYS)
     pathogen_key = None if focus.disease_key else profile.key
     candidates = outbreak_repo.countries_with_active_outbreaks(
         session,
@@ -384,6 +409,7 @@ def _collect_origins(
         disease_label=focus.disease_label,
         disease_key=focus.disease_key,
         since=window,
+        until=moment,
     )
     used_older_reports = False
     if not candidates:
@@ -411,7 +437,9 @@ def _collect_origins(
                 {"origin_iso3": origin, "reason": "no passenger flow to this destination"}
             )
             continue
-        outcome = _origin_prevalence(session, origin, profile, query, country.population, focus)
+        outcome = _origin_prevalence(
+            session, origin, profile, query, country.population, focus, as_of=moment
+        )
         if isinstance(outcome, prev.PrevalenceUnavailable):
             excluded.append({"origin_iso3": origin, "reason": outcome.detail})
             continue
@@ -422,6 +450,7 @@ def _collect_origins(
             profile.key or "",
             disease_label=focus.disease_label,
             disease_key=focus.disease_key,
+            as_of=moment,
         )
         latest = series[-1] if series else None
         usable.append(
@@ -478,8 +507,14 @@ def _effective_distances(
     if not origins:
         return {}
     flows = reference_repo.all_flows(session)
+    # Gravity fills almost every country pair, which would erase hub paths.
+    # Distance uses observed passengers and pairs that have a real route.
     graph = build_effective_distance_graph(
-        {(f.origin_iso3, f.dest_iso3): f.passengers_per_day for f in flows}
+        {
+            (flow.origin_iso3, flow.dest_iso3): flow.passengers_per_day
+            for flow in flows
+            if flow.value_type is ValueType.OBSERVED or (flow.direct_route_count or 0) > 0
+        }
     )
     ranked = rank_origins_by_effective_distance(graph, destination_iso3.upper(), origins)
     return {p.origin: (p.distance, p.intermediate_nodes) for p in ranked}
@@ -582,7 +617,8 @@ def compute_active_risk(session: Session, destination_iso3: str, query: RiskQuer
     if destination is None:
         raise NotFoundError("country", destination_iso3)
 
-    window = utc_now() - timedelta(days=PRESENCE_LOOKBACK_DAYS)
+    moment = query.as_of or utc_now()
+    window = moment - timedelta(days=PRESENCE_LOOKBACK_DAYS)
     diseases = outbreak_repo.active_diseases(session, since=window)
     warnings: list[ResponseWarning] = [
         ResponseWarning(
@@ -619,7 +655,7 @@ def compute_active_risk(session: Session, destination_iso3: str, query: RiskQuer
         alpha_high = query.alpha if query.alpha is not None else profile.alpha.high
 
         origins, disease_excluded, disease_considered, _ = _collect_origins(
-            session, destination.iso3, profile, query, focus
+            session, destination.iso3, profile, query, focus, as_of=moment
         )
         considered += disease_considered
         for entry in disease_excluded:
@@ -769,6 +805,7 @@ def compute_active_risk(session: Session, destination_iso3: str, query: RiskQuer
         query.alpha if query.alpha is not None else profile.alpha.central,
         profile.reproduction_number.central,
         profile.dispersion_k.central,
+        moment,
     )
     return response.model_copy(
         update={
@@ -793,6 +830,7 @@ def compute_risk(session: Session, destination_iso3: str, query: RiskQuery) -> R
     if query.scope == ACTIVE_SCOPE:
         return compute_active_risk(session, destination_iso3, query)
 
+    moment = query.as_of or utc_now()
     destination = reference_repo.get_country(session, destination_iso3)
     if destination is None:
         raise NotFoundError("country", destination_iso3)
@@ -831,9 +869,10 @@ def compute_risk(session: Session, destination_iso3: str, query: RiskQuery) -> R
         focus.pathogen_key or profile.key,
         disease_label=focus.disease_label,
         disease_key=focus.disease_key,
+        as_of=moment,
     )
     origins, excluded, considered, used_older_reports = _collect_origins(
-        session, destination.iso3, profile, query, focus
+        session, destination.iso3, profile, query, focus, as_of=moment
     )
     if used_older_reports:
         warnings.append(
@@ -906,6 +945,7 @@ def compute_risk(session: Session, destination_iso3: str, query: RiskQuery) -> R
             alpha,
             r_central,
             k_central,
+            moment,
         )
 
     rate_low, _ = _rate_for_scenario(origins, alpha_low, query.sigma, "low")
@@ -1020,6 +1060,7 @@ def compute_risk(session: Session, destination_iso3: str, query: RiskQuery) -> R
         alpha,
         r_central,
         k_central,
+        moment,
     )
 
 
@@ -1177,7 +1218,7 @@ def _scenario_markers(
         for o in origins
     ]
     rate, _ = _rate_for_scenario(upper_band, alpha_high, 0.0, "high")
-    now = utc_now()
+    now = query.as_of or utc_now()
 
     import_day = imp.days_to_probability_threshold(rate, query.threshold)
     markers = [
@@ -1215,6 +1256,44 @@ def _scenario_markers(
     return markers
 
 
+def _travel_index(
+    presence: LocalPresence,
+    importation: ImportationRisk,
+    establishment: EstablishmentRisk,
+    as_of: datetime,
+) -> TravelIndex:
+    """Score the scenario. The next-country model is not passed in."""
+    cases = presence.cases_confirmed.value if presence.cases_confirmed is not None else None
+    share = importation.top_origins[0].share_of_total if importation.top_origins else None
+    result = compute_travel_index(
+        TravelIndexInputs(
+            presence_status=presence.status.value,
+            last_reported_at=presence.last_reported_at,
+            cases_confirmed=cases,
+            as_of=as_of,
+            importation_probability=importation.probability.central,
+            establishment_probability=establishment.probability_within_horizon.central,
+            arrival_rate_per_day=importation.arrival_rate_per_day.central,
+            origin_rates=tuple(origin.arrival_rate_per_day for origin in importation.top_origins),
+            top_origin_share=share,
+        )
+    )
+    return TravelIndex(
+        score=result.score,
+        band=result.band,
+        components=[
+            TravelIndexComponent(
+                key=component.key,
+                score=component.score,
+                weight=component.weight,
+                available=component.available,
+            )
+            for component in result.components
+        ],
+        note=result.note,
+    )
+
+
 def _assemble(
     destination: object,
     profile: PathogenProfile,
@@ -1230,6 +1309,7 @@ def _assemble(
     alpha: float,
     r_central: float,
     k_central: float,
+    as_of: datetime,
 ) -> RiskResponse:
     iso3 = getattr(destination, "iso3", "")
     name = getattr(destination, "name", None) or country_name(iso3)
@@ -1348,6 +1428,7 @@ def _assemble(
         horizon_days=query.horizon_days,
         computed_at=utc_now(),
         model_version=MODEL_VERSION,
+        travel_index=_travel_index(presence, importation, establishment, as_of),
         presence=presence,
         importation=importation,
         establishment=establishment,
@@ -1356,4 +1437,5 @@ def _assemble(
         warnings=warnings,
         data=freshness,
         disclaimer=DISCLAIMER,
+        calibration_status=_calibration_status(),
     )

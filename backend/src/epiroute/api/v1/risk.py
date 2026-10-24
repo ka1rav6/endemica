@@ -8,9 +8,30 @@ from fastapi import Path as PathParam
 from epiroute.api.deps import DbSession
 from epiroute.schemas.errors import ErrorResponse
 from epiroute.schemas.risk import RiskQuery, RiskResponse
+from epiroute.services.forecast import rank_next_countries
 from epiroute.services.risk import compute_risk
 
 router = APIRouter(prefix="/risk", tags=["risk"])
+
+
+@router.get(
+    "/next",
+    summary="Countries most likely to report this disease next",
+)
+def get_next_countries(
+    session: DbSession,
+    disease_key: Annotated[str | None, Query()] = None,
+    pathogen: Annotated[str | None, Query()] = None,
+    horizon_days: Annotated[float, Query(ge=1, le=365)] = 28.0,
+    limit: Annotated[int, Query(ge=1, le=50)] = 20,
+) -> dict[str, object]:
+    query = RiskQuery(
+        disease_key=disease_key,
+        pathogen_key=pathogen,
+        horizon_days=horizon_days,
+        max_origins=limit,
+    )
+    return rank_next_countries(session, query, limit=limit)
 
 _DESCRIPTION = """
 Returns the three risk quantities for a destination, kept strictly separate:

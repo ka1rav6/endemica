@@ -77,6 +77,10 @@ _RAW_ALIASES: Final[dict[str, str | None]] = {
     # Kosovo rows are not silently dropped. Documented in docs/data-sources.md.
     "kosovo": "XKX",
     "republic of kosovo": "XKX",
+    # Eurostat uses EL for Greece and XK for Kosovo. Neither is the ISO alpha-2
+    # code, so pycountry drops every Greek and Kosovar airport pair.
+    "el": "GRC",
+    "xk": "XKX",
     # --- Congo: the classic join bug -------------------------------------
     "dr congo": "COD",
     "drc": "COD",

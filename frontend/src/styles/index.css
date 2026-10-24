@@ -156,10 +156,35 @@ a:hover {
   overflow: hidden;
 }
 
+@property --rail-col {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 272px;
+}
+
+@property --panel-col {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 400px;
+}
+
 .app__body {
+  --rail-col: var(--rail);
+  --panel-col: var(--panel);
   display: grid;
-  grid-template-columns: var(--rail) minmax(0, 1fr) var(--panel);
+  grid-template-columns: var(--rail-col) minmax(0, 1fr) var(--panel-col);
   min-height: 0;
+  transition:
+    --rail-col 320ms ease-out,
+    --panel-col 320ms ease-out;
+}
+
+.app__body--rail-collapsed {
+  --rail-col: 32px;
+}
+
+.app__body--panel-collapsed {
+  --panel-col: 32px;
 }
 
 .app__stage {
@@ -412,8 +437,19 @@ a:hover {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .dot--pulse {
+  .dot--pulse,
+  .travel__score,
+  .panel__name {
     animation: none;
+  }
+
+  .app__body,
+  .sidebar__body,
+  .travel__bar i,
+  .tlbar,
+  .tlbar__fill,
+  .panel__name {
+    transition: none;
   }
 }
 
@@ -942,9 +978,10 @@ a:hover {
   font-size: 15px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  color: var(--accent);
+  color: var(--year-risk, var(--accent));
   letter-spacing: -0.01em;
   min-width: 42px;
+  transition: color 320ms ease-out;
 }
 
 .timeline__summary {
@@ -992,12 +1029,12 @@ a:hover {
 }
 
 .tlbar--within .tlbar__fill {
-  background: linear-gradient(to top, var(--accent-dim), var(--accent));
+  background: var(--bar, var(--accent));
 }
 
 .tlbar--current .tlbar__fill {
-  background: var(--accent);
-  box-shadow: 0 0 10px rgb(46 230 192 / 45%);
+  background: var(--bar, var(--accent));
+  box-shadow: 0 0 10px color-mix(in srgb, var(--bar, var(--accent)) 45%, transparent);
 }
 
 .tlbar__new {
@@ -1008,7 +1045,7 @@ a:hover {
   width: 4px;
   height: 4px;
   border-radius: 50%;
-  background: var(--hot);
+  background: var(--bar, var(--hot));
 }
 
 .timeline__axis {
@@ -1031,7 +1068,11 @@ a:hover {
   inset: 0;
   width: var(--w, 0%);
   border-radius: var(--r-pill);
-  background: linear-gradient(90deg, var(--accent-dim), var(--accent));
+  background: linear-gradient(
+    90deg,
+    var(--risk-low, var(--accent-dim)),
+    var(--year-risk, var(--accent))
+  );
 }
 
 .timeline__slider {
@@ -1049,7 +1090,7 @@ a:hover {
   width: 13px;
   height: 13px;
   border-radius: 50%;
-  background: var(--accent);
+  background: var(--year-risk, var(--accent));
   border: 2px solid var(--bg-deep);
   box-shadow: var(--shadow-sm);
   cursor: grab;
@@ -1059,7 +1100,7 @@ a:hover {
   width: 13px;
   height: 13px;
   border-radius: 50%;
-  background: var(--accent);
+  background: var(--year-risk, var(--accent));
   border: 2px solid var(--bg-deep);
   cursor: grab;
 }
@@ -1101,6 +1142,7 @@ a:hover {
   font-weight: 680;
   letter-spacing: -0.025em;
   line-height: 1.15;
+  animation: rise-in 320ms ease-out;
 }
 
 .panel__sub {
@@ -1735,10 +1777,10 @@ button.row[aria-current='true'] {
 
 @media (max-width: 1240px) {
   .app__body {
-    grid-template-columns: minmax(0, 1fr) var(--panel);
+    grid-template-columns: minmax(0, 1fr) var(--panel-col);
   }
 
-  .rail {
+  .sidebar--left {
     display: none;
   }
 }
@@ -1748,10 +1790,33 @@ button.row[aria-current='true'] {
     grid-template-rows: auto 1fr;
   }
 
-  .app__body {
+  .app__body,
+  .app__body--rail-collapsed,
+  .app__body--panel-collapsed {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: 54vh auto;
     overflow-y: auto;
+  }
+
+  .sidebar.is-collapsed .sidebar__body {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .sidebar.is-collapsed .sidebar__tab {
+    position: absolute;
+    inset: 8px auto auto 8px;
+    width: 26px;
+    height: 26px;
+    writing-mode: horizontal-tb;
+  }
+
+  .sidebar.is-collapsed .sidebar__tab-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
   }
 
   .panel {
@@ -1908,4 +1973,276 @@ button.row[aria-current='true'] {
   font-size: 10.5px;
   line-height: 1.4;
   color: var(--ink-3);
+}
+
+/* --------------------------------------------------------------- sidebars */
+
+.sidebar {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.sidebar--left {
+  border-right: 1px solid var(--line);
+}
+
+.sidebar--right {
+  border-left: 1px solid var(--line);
+}
+
+.sidebar__body {
+  height: 100%;
+  min-height: 0;
+  opacity: 1;
+  transition: opacity 280ms ease-out;
+}
+
+.sidebar--left .sidebar__body {
+  width: var(--rail);
+}
+
+.sidebar--right .sidebar__body {
+  width: var(--panel);
+}
+
+.sidebar.is-collapsed .sidebar__body {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.sidebar .rail,
+.sidebar .panel {
+  height: 100%;
+  min-height: 0;
+}
+
+.sidebar .rail {
+  border-right: 0;
+}
+
+.sidebar .panel {
+  border-left: 0;
+}
+
+.sidebar--left .rail__title {
+  padding-right: 30px;
+}
+
+.sidebar--right .panel__head {
+  padding-left: 42px;
+}
+
+.sidebar__tab {
+  position: absolute;
+  z-index: 7;
+  top: 10px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--r-sm);
+  background: var(--surface-3);
+  border: 1px solid var(--line-2);
+  color: var(--ink-2);
+}
+
+.sidebar--left .sidebar__tab {
+  right: 8px;
+}
+
+.sidebar--right .sidebar__tab {
+  left: 8px;
+}
+
+.sidebar__tab:hover {
+  color: var(--ink);
+  background: var(--surface-2);
+}
+
+.sidebar.is-collapsed .sidebar__tab {
+  inset: 0;
+  width: auto;
+  height: auto;
+  border: 0;
+  border-radius: 0;
+  background: var(--surface);
+  gap: 10px;
+}
+
+.sidebar.is-collapsed .sidebar__tab-label {
+  writing-mode: vertical-rl;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---------------------------------------------------------- travel index */
+
+.travel {
+  display: grid;
+  gap: 7px;
+  padding-bottom: 2px;
+}
+
+.travel__kicker {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+}
+
+.travel__kind {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  color: var(--ink-3);
+}
+
+.travel__hero {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.travel__score {
+  font-size: 46px;
+  font-weight: 720;
+  line-height: 0.9;
+  letter-spacing: -0.045em;
+  font-variant-numeric: tabular-nums;
+  animation: rise-in 320ms ease-out;
+}
+
+.travel__scale {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-4);
+}
+
+.travel__band {
+  margin-left: auto;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.travel__meter {
+  position: relative;
+  display: block;
+  height: 6px;
+  border-radius: var(--r-pill);
+  overflow: visible;
+}
+
+.travel__meter i {
+  position: absolute;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 2px solid var(--surface);
+  transform: translate(-50%, -50%);
+}
+
+.travel__hint,
+.travel__empty,
+.travel__loading {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.travel__empty {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--ink-3);
+}
+
+.travel__loading {
+  color: var(--ink-4);
+}
+
+.travel__parts {
+  list-style: none;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin: 2px 0 0;
+  padding: 0;
+}
+
+.travel__part {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 6px 7px;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+
+.travel__part--off {
+  opacity: 0.55;
+}
+
+.travel__part-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.travel__bar {
+  display: block;
+  height: 3px;
+  border-radius: var(--r-pill);
+  background: var(--surface-3);
+  overflow: hidden;
+}
+
+.travel__bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  transition: width 320ms ease-out;
+}
+
+.travel__weight {
+  font-size: 10px;
+  color: var(--ink-4);
+}
+
+.travel__note {
+  margin: 0;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--ink-4);
 }

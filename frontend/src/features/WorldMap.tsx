@@ -14,10 +14,12 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 
 setWorkerUrl(maplibreWorkerUrl);
 import type { Feature, FeatureCollection, LineString, Point as GeoPoint } from 'geojson';
-import type { Country, OriginContribution, Route } from '@/types/api';
-import type { MapSpreadEntry } from '@/lib/spread';
-import { greatCircleLine } from '@/lib/geo';
 import { formatCount, formatPassengers } from '@/lib/format';
+import { greatCircleLine } from '@/lib/geo';
+import { RISK_COLOR_STOPS, riskColor, riskFillExpression } from '@/lib/riskColor';
+import type { MapSpreadEntry } from '@/lib/spread';
+import { arcsToCollection, spreadArcs, type SpreadArc } from '@/lib/spreadFlow';
+import type { Country, OriginContribution, Route } from '@/types/api';
 
 const API_BOUNDARIES_URL = '/data/country_boundaries.geojson';
 const BUNDLED_BOUNDARIES_URL = '/boundaries/countries.geojson';
@@ -30,8 +32,6 @@ const C = {
   outline: '#2f3f4f',
   outlineHover: '#dbe6f0',
   selected: '#2ee6c0',
-  /** Earliest to latest arrival. Reads as a time ramp, not a severity ramp. */
-  ramp: ['#ff6b7a', '#ff9f6b', '#ffd166', '#8fd98a', '#58a6ff', '#9f86ff'],
   arcObserved: '#2ee6c0',
   arcEstimated: '#58a6ff',
 } as const;
@@ -48,6 +48,11 @@ interface Props {
   origins: OriginContribution[];
   routes: Route[];
   showFlows: boolean;
+  forecast?: { iso3: string; probability: number }[];
+  /** Travel-risk index for the selected country, or null when it is not estimable. */
+  selectedRisk?: number | null;
+  /** Full outbreak span, so a year early in the timeline stays green. */
+  spreadSpan?: { first: number; last: number } | null;
 }
 
 interface BoundaryCollection {
@@ -215,32 +220,29 @@ function routePopup(properties: Record<string, unknown>): HTMLElement {
   return root;
 }
 
-const fillColour: ExpressionSpecification = [
+const fillColour = [
   'case',
-  ['boolean', ['feature-state', 'selected'], false],
-  C.selected,
-  ['boolean', ['feature-state', 'affected'], false],
   [
-    'interpolate',
-    ['linear'],
-    ['coalesce', ['feature-state', 'order'], 0],
-    0,
-    C.ramp[0],
-    0.2,
-    C.ramp[1],
-    0.4,
-    C.ramp[2],
-    0.6,
-    C.ramp[3],
-    0.8,
-    C.ramp[4],
-    1,
-    C.ramp[5],
+    'all',
+    ['boolean', ['feature-state', 'selected'], false],
+    ['boolean', ['feature-state', 'hasRisk'], false],
   ],
+  riskFillExpression(['coalesce', ['feature-state', 'risk'], 0]),
+  ['boolean', ['feature-state', 'forecast'], false],
+  riskFillExpression(['*', ['coalesce', ['feature-state', 'probability'], 0], 10]),
+  ['boolean', ['feature-state', 'affected'], false],
+  riskFillExpression(['*', ['coalesce', ['feature-state', 'order'], 0], 10]),
   ['boolean', ['feature-state', 'hasAnyReport'], false],
   C.landQuiet,
   C.land,
-];
+] as unknown as ExpressionSpecification;
+
+const EMPTY_FLOWS: FeatureCollection<LineString> = { type: 'FeatureCollection', features: [] };
+
+interface FlowAnim {
+  start: number;
+  duration: number;
+}
 
 export function WorldMap({
   countries,
@@ -254,6 +256,9 @@ export function WorldMap({
   origins,
   routes,
   showFlows,
+  forecast = [],
+  selectedRisk = null,
+  spreadSpan = null,
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
@@ -262,6 +267,8 @@ export function WorldMap({
   const [boundaryError, setBoundaryError] = useState<string | null>(null);
   const selectRef = useRef(onSelect);
   selectRef.current = onSelect;
+  const flowLinesRef = useRef<SpreadArc[]>([]);
+  const flowAnimRef = useRef<FlowAnim | null>(null);
 
   const byIso3 = useMemo(() => new Map(countries.map((c) => [c.iso3, c])), [countries]);
   const spreadByIso3 = useMemo(() => new Map(spread.map((e) => [e.iso3, e])), [spread]);
@@ -342,6 +349,18 @@ export function WorldMap({
           1.15,
         ]);
       }
+      const flow = flowAnimRef.current;
+      if (flow && map.getLayer('spread-flow')) {
+        const raw = Math.min(1, (now - flow.start) / flow.duration);
+        const eased = 1 - (1 - raw) ** 3;
+        const source = map.getSource('spread-flow');
+        // MapLibre 6 has no line-trim-offset, so the arc is drawn on by
+        // revealing the great-circle vertices. Same idea as stroke-dashoffset.
+        if (source instanceof GeoJSONSource) {
+          void source.setData(arcsToCollection(flowLinesRef.current, eased));
+        }
+        if (raw >= 1) flowAnimRef.current = null;
+      }
       if (map.getLayer('pin-halo')) {
         const wave = (Math.sin(now / 760) + 1) / 2;
         map.setPaintProperty('pin-halo', 'circle-radius', 8 + wave * 15);
@@ -374,6 +393,7 @@ export function WorldMap({
             source: 'countries',
             paint: {
               'fill-color': fillColour,
+              'fill-color-transition': { duration: reducedMotion ? 0 : 320, delay: 0 },
               'fill-opacity': [
                 'case',
                 ['boolean', ['feature-state', 'hover'], false],
@@ -382,6 +402,7 @@ export function WorldMap({
                 0.92,
                 0.78,
               ] as ExpressionSpecification,
+              'fill-opacity-transition': { duration: reducedMotion ? 0 : 280, delay: 0 },
             },
           });
           map.addLayer({
@@ -409,6 +430,25 @@ export function WorldMap({
                 1.2,
                 0.45,
               ] as ExpressionSpecification,
+              'line-color-transition': { duration: reducedMotion ? 0 : 320, delay: 0 },
+              'line-width-transition': { duration: reducedMotion ? 0 : 320, delay: 0 },
+            },
+          });
+
+          map.addSource('spread-flow', {
+            type: 'geojson',
+            lineMetrics: true,
+            data: EMPTY_FLOWS,
+          });
+          map.addLayer({
+            id: 'spread-flow',
+            type: 'line',
+            source: 'spread-flow',
+            layout: { 'line-cap': 'round', 'line-join': 'round' },
+            paint: {
+              'line-color': ['get', 'color'] as ExpressionSpecification,
+              'line-width': 2.4,
+              'line-opacity': 0.92,
             },
           });
 
@@ -603,6 +643,25 @@ export function WorldMap({
           };
           map.on('mousemove', 'arc-observed', showArc);
           map.on('mousemove', 'arc-modelled', showArc);
+          map.on('mousemove', 'spread-flow', (event: MapLayerMouseEvent) => {
+            const properties = event.features?.[0]?.properties;
+            if (!properties) return;
+            map.getCanvas().style.cursor = 'pointer';
+            const root = document.createElement('div');
+            root.append(
+              node('strong', `${String(properties['fromName'])} → ${String(properties['toName'])}`),
+              node('div', `Newly reached in ${String(properties['year'])}`, {
+                color: String(properties['color'] ?? '#e6b325'),
+                fontSize: '11px',
+                marginTop: '2px',
+              }),
+            );
+            popup.setLngLat(event.lngLat).setDOMContent(root).addTo(map);
+          });
+          map.on('mouseleave', 'spread-flow', () => {
+            popup.remove();
+            map.getCanvas().style.cursor = '';
+          });
 
           if (!reducedMotion) raf = requestAnimationFrame(animate);
           map.resize();
@@ -650,18 +709,31 @@ export function WorldMap({
       }
     }
     for (const entry of spread) {
+      // Spread: early arrival is green. Active view: more diseases is red.
+      const danger = activeMode ? 1 - entry.arrivalShare : entry.arrivalShare;
       map.setFeatureState(
         { source: 'countries', id: entry.iso3 },
-        { affected: true, order: entry.arrivalShare },
+        { affected: true, order: danger },
+      );
+    }
+    for (const entry of forecast) {
+      map.setFeatureState(
+        { source: 'countries', id: entry.iso3 },
+        { forecast: true, probability: entry.probability },
       );
     }
     if (comparisonIso3) {
       map.setFeatureState({ source: 'countries', id: comparisonIso3 }, { compared: true });
     }
     if (selectedIso3) {
-      map.setFeatureState({ source: 'countries', id: selectedIso3 }, { selected: true });
+      map.setFeatureState(
+        { source: 'countries', id: selectedIso3 },
+        selectedRisk === null || !Number.isFinite(selectedRisk)
+          ? { selected: true }
+          : { selected: true, hasRisk: true, risk: selectedRisk },
+      );
     }
-  }, [ready, countries, spread, selectedIso3, comparisonIso3]);
+  }, [ready, countries, spread, forecast, selectedIso3, comparisonIso3, selectedRisk, activeMode]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -673,6 +745,34 @@ export function WorldMap({
       );
     }
   }, [ready, routes, origins, showFlows]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const source = map.getSource('spread-flow');
+    if (!(source instanceof GeoJSONSource)) return;
+
+    const clear = () => {
+      flowLinesRef.current = [];
+      flowAnimRef.current = null;
+      void source.setData(EMPTY_FLOWS);
+    };
+    if (activeMode || yearCeiling === null) {
+      clear();
+      return;
+    }
+
+    const arcs = spreadArcs(countries, spread, yearCeiling, spreadSpan);
+    flowLinesRef.current = arcs;
+    if (arcs.length === 0) {
+      clear();
+      return;
+    }
+
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    void source.setData(arcsToCollection(arcs, reduced ? 1 : 0));
+    flowAnimRef.current = reduced ? null : { start: performance.now(), duration: 680 };
+  }, [ready, countries, spread, yearCeiling, spreadSpan, activeMode]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -771,17 +871,23 @@ export function WorldMap({
         {spread.length > 0 && (
           <div className="hud legend">
             <span className="legend__title">
-              {activeMode ? 'Diseases reported' : 'Order of arrival'}
+              {activeMode ? 'Diseases reported' : 'When it arrived'}
             </span>
             <span className="legend__ramp" aria-hidden="true">
-              {C.ramp.map((colour) => (
-                <i key={colour} style={{ background: colour }} />
+              {RISK_COLOR_STOPS.map(([stop, colour]) => (
+                <i key={stop} style={{ background: colour }} />
               ))}
             </span>
             <span className="legend__scale">
-              <span>{activeMode ? 'most' : 'first'}</span>
-              <span>{activeMode ? 'one' : 'latest'}</span>
+              <span>{activeMode ? 'fewer' : 'earlier'}</span>
+              <span>{activeMode ? 'more' : 'later'}</span>
             </span>
+            {!activeMode && yearCeiling !== null && (
+              <span className="legend__row">
+                <span className="swatch swatch--line" style={{ background: riskColor(7) }} />
+                Growth into {yearCeiling}
+              </span>
+            )}
             {showFlows && (
               <>
                 <span className="legend__row">

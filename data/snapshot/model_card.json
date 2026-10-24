@@ -1,0 +1,132 @@
+{
+  "passed": false,
+  "status": "not_validated",
+  "b1": 0.015625,
+  "g": 1.03125,
+  "b0_by_outbreak": {
+    "mpox_2022": -8.5625,
+    "covid_2020": -10.59375
+  },
+  "folds": [
+    {
+      "held_out": "covid_2020",
+      "skipped": false,
+      "brier": 0.24682260460737185,
+      "serve_b0": -8.5625,
+      "serve_b1": 0.0625,
+      "serve_g": 0.625,
+      "gates": [
+        {
+          "name": "brier_skill_vs_uncalibrated",
+          "passed": true,
+          "value": 0.2539352090235707,
+          "detail": "at least 0.10"
+        },
+        {
+          "name": "brier_skill_vs_best_simple",
+          "passed": true,
+          "value": 0.22670724122730812,
+          "detail": "at least 0.03"
+        },
+        {
+          "name": "roc_auc",
+          "passed": true,
+          "value": 0.8105216761170503,
+          "detail": "at least 0.70 on this outbreak"
+        },
+        {
+          "name": "calibration_slope",
+          "passed": true,
+          "value": 1.1965264926393826,
+          "detail": "0.5 to 1.5 on one outbreak"
+        },
+        {
+          "name": "calibration_intercept",
+          "passed": false,
+          "value": 2.2214487775633907,
+          "detail": "absolute value at most 0.5 on one outbreak"
+        },
+        {
+          "name": "top_20_recall",
+          "passed": false,
+          "value": 0.014018691588785047,
+          "detail": "at least 0.5"
+        },
+        {
+          "name": "arrival_order_spearman",
+          "passed": false,
+          "value": 0.14024033817851894,
+          "detail": "at least 0.5"
+        },
+        {
+          "name": "monotone_in_lambda",
+          "passed": true,
+          "value": 1.0,
+          "detail": "b1 is at least 0, so probability does not fall as lambda rises"
+        }
+      ],
+      "passed": false
+    },
+    {
+      "held_out": "mpox_2022",
+      "skipped": false,
+      "brier": 0.22115535589005073,
+      "serve_b0": -10.59375,
+      "serve_b1": 0.015625,
+      "serve_g": 1.03125,
+      "gates": [
+        {
+          "name": "brier_skill_vs_uncalibrated",
+          "passed": false,
+          "value": -1.1853201408771037,
+          "detail": "at least 0.10"
+        },
+        {
+          "name": "brier_skill_vs_best_simple",
+          "passed": false,
+          "value": -1.0816606343617887,
+          "detail": "at least 0.03"
+        },
+        {
+          "name": "roc_auc",
+          "passed": false,
+          "value": 0.6493839800137279,
+          "detail": "at least 0.70 on this outbreak"
+        },
+        {
+          "name": "calibration_slope",
+          "passed": false,
+          "value": 0.3967202250053514,
+          "detail": "0.5 to 1.5 on one outbreak"
+        },
+        {
+          "name": "calibration_intercept",
+          "passed": false,
+          "value": -1.9200827026305904,
+          "detail": "absolute value at most 0.5 on one outbreak"
+        },
+        {
+          "name": "top_20_recall",
+          "passed": false,
+          "value": 0.02694610778443114,
+          "detail": "at least 0.5"
+        },
+        {
+          "name": "arrival_order_spearman",
+          "passed": false,
+          "value": 0.04304146849503897,
+          "detail": "at least 0.5"
+        },
+        {
+          "name": "monotone_in_lambda",
+          "passed": true,
+          "value": 1.0,
+          "detail": "b1 is at least 0, so probability does not fall as lambda rises"
+        }
+      ],
+      "passed": false
+    }
+  ],
+  "claim": "Held-out chance that a country reports its first case within 28 days, for the outbreaks in this card. Not a forecast for a new pathogen.",
+  "panel_sha256": "fc54b8b1d58b8edaee9bbe1d1ae2a7c2ded7f509e3a3e5e656f00f132c5cadfe"
+}

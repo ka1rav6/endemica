@@ -96,14 +96,20 @@ def load_flows(session: Session, path: Path) -> int:
     frame = frame[frame["origin_iso3"] != frame["dest_iso3"]]
 
     columns = [
-        "origin_iso3",
-        "dest_iso3",
-        "passengers_per_day",
-        "value_type",
-        "source",
-        "reference_period",
-        "uncertainty_factor",
-        "direct_route_count",
+        column
+        for column in (
+            "origin_iso3",
+            "dest_iso3",
+            "passengers_per_day",
+            "value_type",
+            "source",
+            "reference_period",
+            "uncertainty_factor",
+            "direct_route_count",
+            "cross_check_source",
+            "cross_check_ratio",
+        )
+        if column in frame.columns
     ]
     rows = _records(frame, columns)
     for row in rows:

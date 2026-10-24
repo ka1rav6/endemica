@@ -319,6 +319,17 @@ export function riskResponse(overrides: Partial<RiskResponse> = {}): RiskRespons
     ],
     disclaimer:
       'Situational awareness and education only. Not a diagnostic tool, not an official forecast.',
+    travel_index: {
+      score: 4.2,
+      band: 'Moderate',
+      components: [
+        { key: 'presence', score: 0, weight: 0.4, available: true },
+        { key: 'importation', score: 1.8, weight: 0.3, available: true },
+        { key: 'establishment', score: 0.2, weight: 0.15, available: true },
+        { key: 'connectivity', score: 5.3, weight: 0.15, available: true },
+      ],
+      note: 'This is a composite scenario index, not a forecast and not a reason to ignore official travel advice.',
+    },
     ...overrides,
   };
 }

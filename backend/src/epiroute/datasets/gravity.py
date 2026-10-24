@@ -107,7 +107,16 @@ class GravityFit:
         return total
 
     def predict_passengers_per_day(self, features: PairFeatures) -> float:
-        return float(10.0 ** self.predict_log10(features))
+        """Return the mean flow, not the median of the log-linear fit.
+
+        The regression predicts log10(passengers). Exponentiating that is the
+        median. For a log10-normal residual with standard deviation sigma,
+        the mean is larger by ``10 ** (0.5 * sigma^2 * ln(10))``.
+        """
+        median = 10.0 ** self.predict_log10(features)
+        sigma = self.residual_sigma_log10
+        correction = 10.0 ** (0.5 * sigma * sigma * math.log(10.0))
+        return float(median * correction)
 
     @property
     def uncertainty_factor(self) -> float:
@@ -176,11 +185,23 @@ def fit_gravity_model(
     design = np.array([[1.0, *f.to_vector()] for f, _ in usable], dtype=float)
     target = np.array([math.log10(v) for _, v in usable], dtype=float)
 
+    # Hold out unordered country pairs, so A→B and B→A cannot sit on opposite
+    # sides of the split and leak the same route into the test score.
+    pair_groups: dict[tuple[str, str], list[int]] = {}
+    for index, (features, _) in enumerate(usable):
+        pair = tuple(sorted((features.origin_iso3, features.dest_iso3)))
+        pair_groups.setdefault(pair, []).append(index)
     rng = np.random.default_rng(seed)
-    order = rng.permutation(len(usable))
-    n_test = max(1, round(len(usable) * test_fraction))
-    test_index = order[:n_test]
-    train_index = order[n_test:]
+    group_order = rng.permutation(len(pair_groups))
+    n_test_groups = max(1, round(len(pair_groups) * test_fraction))
+    test_pairs = {list(pair_groups)[int(i)] for i in group_order[:n_test_groups]}
+    test_index = np.array(
+        [i for pair, rows in pair_groups.items() if pair in test_pairs for i in rows]
+    )
+    train_index = np.array(
+        [i for pair, rows in pair_groups.items() if pair not in test_pairs for i in rows]
+    )
+    n_test = int(len(test_index))
 
     solution, *_ = np.linalg.lstsq(design[train_index], target[train_index], rcond=None)
 

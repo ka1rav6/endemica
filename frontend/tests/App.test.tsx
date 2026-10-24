@@ -80,6 +80,9 @@ vi.mock('@/services/epiroute', () => ({
     }),
   ),
   getRoutes: vi.fn(() => Promise.resolve(fixturesRef.routes)),
+  getNextCountries: vi.fn(() =>
+    Promise.resolve({ calibration_status: 'not_validated', horizon_days: 28, countries: [] }),
+  ),
   getRisk: vi.fn((iso3: string) =>
     Promise.resolve(
       risk.current && typeof risk.current === 'object'
@@ -127,6 +130,7 @@ describe('App', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+    sessionStorage.clear();
   });
 
   it('selects a country with a reported outbreak by default', async () => {
@@ -270,6 +274,38 @@ describe('App', () => {
     expect(screen.getByText(/not an official forecast/i)).toBeInTheDocument();
   });
 
+  it('leads with a travel-risk index and keeps the three questions', async () => {
+    await renderOnRiskTab();
+    const index = screen.getByTestId('travel-index');
+    expect(index).toHaveTextContent('4.2');
+    expect(index).toHaveTextContent('Moderate');
+    expect(index).toHaveTextContent(/scenario summary/i);
+    expect(index).toHaveTextContent(/not a forecast/i);
+    expect(index).toHaveTextContent(/official travel advice/i);
+    expect(index).toHaveTextContent(/Higher means more reason to check official guidance/);
+    expect(screen.getByTestId('presence-card')).toBeInTheDocument();
+    expect(screen.getByTestId('importation-card')).toBeInTheDocument();
+    expect(screen.getByTestId('establishment-card')).toBeInTheDocument();
+  });
+
+  it('collapses each sidebar and remembers it for the session', async () => {
+    render(<App />);
+    await waitFor(() => {
+      expect(screen.getByLabelText('Search diseases')).toBeInTheDocument();
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'Hide diseases sidebar' }));
+    expect(screen.queryByRole('searchbox', { name: 'Search diseases' })).not.toBeInTheDocument();
+    expect(sessionStorage.getItem('epiroute.railCollapsed')).toBe('1');
+    await userEvent.click(screen.getByRole('button', { name: 'Show diseases sidebar' }));
+    expect(screen.getByRole('searchbox', { name: 'Search diseases' })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Hide details sidebar' }));
+    expect(screen.queryByRole('tab', { name: 'Risk' })).not.toBeInTheDocument();
+    expect(sessionStorage.getItem('epiroute.panelCollapsed')).toBe('1');
+    await userEvent.click(screen.getByRole('button', { name: 'Show details sidebar' }));
+    expect(screen.getByRole('tab', { name: 'Risk' })).toBeInTheDocument();
+  });
+
   it('lets a destination be found by name', async () => {
     render(<App />);
     await waitFor(() => {
@@ -304,6 +340,7 @@ describe('Disease history and the country record', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+    sessionStorage.clear();
   });
 
   it('opens on the country record, naming the disease reported there', async () => {
@@ -417,6 +454,7 @@ describe('The all-active view', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+    sessionStorage.clear();
   });
 
   it('combines every active disease into one view when Active is pressed', async () => {

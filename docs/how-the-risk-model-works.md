@@ -51,9 +51,11 @@ A flat total, or a total that was revised downward, produces no prevalence. The 
 infectious people = cumulative cases × min(1, D / A) × u
 ```
 
-An outbreak younger than one infectious period has had no time for recoveries, so the fraction is 1. A single cumulative total with no start date is refused. Treating every historical case as still infectious would inflate the result by many times.
+An outbreak younger than one infectious period has had no time for recoveries, so the fraction is 1. A single cumulative total with no start date uses an assumed age of 90 days, and the screen says so. Treating every historical case as still infectious would inflate the result by many times.
 
-Reports older than 60 days are refused. The outbreak may be over.
+Two reports less than a day apart are treated as a revision, not a daily rate. A report published after the moment being estimated is left out, which is what makes a historical replay possible.
+
+A report older than 60 days is refused on the first pass. If that is the only grounded series, it can still be used out to five years, with a warning that the outbreak may be over.
 
 **Worked example.** A country reports 100 cumulative cases, then 240 cases 14 days later. The infectious period is 7 days and under-reporting is 4×. The population is 10 million.
 
@@ -119,6 +121,27 @@ P(spread takes off) = 1 − exp(−0.028 × 14 × 0.139) = about 5%
 
 So this scenario is about a 32% chance that someone infectious arrives, and about a 5% chance that the arrival starts sustained local spread. Most introductions die out.
 
+## Travel-risk index
+
+The screen leads with one number from 0 to 10. Higher means more reason to check official guidance before travel. It is a composite scenario index for the destination and the assumptions on screen. It is not a calibrated forecast, not a diagnosis, and not official travel advice. It has not been validated against later outbreaks. The next-country model is not an input.
+
+Each input that exists is scored from 0 to 10. The index is the weighted mean of those scores. A missing input is left out and the remaining weights are scaled so they sum to 1. It is not replaced with zero. If every input is missing, the index is not estimable.
+
+| Input | What it answers | Score | Weight |
+| --- | --- | --- | --- |
+| Local presence | Is it already there? | No grounded report: 0. Reported, but every report is older than 90 days (or undated): 4. Reported within 90 days: 7, or 9 when the confirmed-case figure on that presence answer is at least 100. A report exactly 90 days old still counts as recent. | 0.40 |
+| Importation | Could an infectious traveller arrive within the horizon? | 10 times the central probability. Left out when that probability is not estimable. A computed zero stays in. | 0.30 |
+| Establishment | Could local spread take off within the horizon? | 10 times the central probability, and only when establishment is estimable. A computed zero, such as R at or below 1, stays in. | 0.15 |
+| Connectivity | How strongly do passenger flows feed this destination? | log10 of the modelled infectious-arrival rate per day. Rate 0 scores 0. Rates at or below 0.0001 per day score 0. A rate of 1 per day or more scores 10. Between those, the score is linear in log10(rate). Left out when there is no rate. A top-origin share without a rate is not turned into a rate. | 0.15 |
+
+The case threshold uses the confirmed-case figure already attached to local presence: the highest grounded confirmed count among the reports that answer "is it already here?"
+
+The arrival rate used for connectivity is the same central rate as question 2, in infected arrivals per day. Passenger volume, including gravity-model estimates where those are the only flows, is already inside that rate. Connectivity is a second view of it, not a second outbreak model. If the aggregate rate is missing but origin-level rates were still returned, those origin rates are summed.
+
+The number is rounded to one decimal, half up. The band follows that rounded number: 0–2.9 Low, 3–5.9 Moderate, 6–7.9 High, 8–10 Very high.
+
+Do not read the index as the chance that a particular traveller gets sick.
+
 ## What is deliberately left out
 
 - The chance that a particular resident becomes infected. The model stops at "does a chain take off", not "how large does the epidemic get".
@@ -128,7 +151,19 @@ So this scenario is about a 32% chance that someone infectious arrives, and abou
 
 ## A short reading of the screen
 
+- **Travel-risk index** is the 0–10 summary. It is a scenario composite, not a forecast.
 - **Cases reported / No report on file** answers question 1.
 - **Will an infected traveller arrive** is question 2. The value is modelled. The band is the scenario range.
 - **Will sustained local transmission begin** is question 3, from the same arrival rate and the pathogen's R and k.
 - **Not estimable** means an input was missing or the formula does not apply. It does not mean the risk is zero.
+- **Most likely to report next** is a fourth number: the chance a country that has not reported yet reports within 28 days. It is shown as calibrated only when `model_card.json` passed its held-out gates on COVID-19 (2020) and mpox (2022). Otherwise the list is the uncalibrated arrival formula and the screen says **not validated**.
+
+## Where the inputs come from
+
+| Input | Primary | Check |
+| --- | --- | --- |
+| Cases | WHO Disease Outbreak News | ECDC weekly threats report, when TinyFish can read it. News search only finds the official page. A news article's number is never used. |
+| Passengers | Eurostat 2024, plus 2019 and 2022 for the years those outbreaks happened | US Department of Transportation international passengers. They agree when the ratio is between 0.8 and 1.25. |
+| Missing routes | Gravity model trained on those observed counts | Held out by unordered country pair, so a route and its reverse are not split across the test |
+| Population | UN World Population Prospects 2024 | World Bank total population. A gap above 5% is flagged. The UN figure is still the denominator. |
+| Disease settings | Separate profiles for COVID-19, influenza, H5N1, measles, and mpox | The cited paper on each profile. H5N1 stays below R = 1, so establishment is zero. |

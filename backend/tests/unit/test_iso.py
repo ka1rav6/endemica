@@ -28,6 +28,8 @@ class TestResolvesWhatPycountryCannot:
             ("Ivory Coast", "CIV"),
             ("Cote d'Ivoire", "CIV"),
             ("Kosovo", "XKX"),
+            ("EL", "GRC"),
+            ("XK", "XKX"),
             ("East Timor", "TLS"),
             ("The Gambia", "GMB"),
             ("Czech Republic", "CZE"),

@@ -119,9 +119,14 @@ class TestAliasMatching:
             ("Zika virus disease - India", "vector_borne"),
             ("Dengue - Global situation", "vector_borne"),
             ("Cholera - Global situation", "enteric_waterborne"),
-            ("Avian Influenza A(H5N1) - Cambodia", "respiratory_default"),
-            ("COVID-19", "respiratory_default"),
-            ("Pneumonia of undetermined etiology", "respiratory_default"),
+            ("Avian Influenza A(H5N1) - Cambodia", "avian_influenza"),
+            ("Influenza A(H5N1) - Cambodia", "avian_influenza"),
+            ("Human infection with influenza A(H5N1) virus", "avian_influenza"),
+            ("COVID-19", "covid_19"),
+            ("Pneumonia of undetermined etiology", "covid_19"),
+            ("Seasonal influenza - Global", "seasonal_influenza"),
+            ("Measles - Global situation", "measles"),
+            ("Mpox - African Region", "mpox"),
         ],
     )
     def test_real_who_titles_map_to_the_right_profile(self, label: str, expected: str) -> None:

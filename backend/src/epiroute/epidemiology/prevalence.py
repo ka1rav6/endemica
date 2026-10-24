@@ -89,6 +89,10 @@ DEFAULT_MAX_REPORT_AGE_DAYS = 60.0
 # outbreak. It is an assumption, and the estimate says so.
 ASSUMED_OUTBREAK_AGE_DAYS = 90.0
 
+# Two reports closer than this are a revision of the same total, not a rate.
+# Differencing them divides a small count change by a fraction of a day.
+MIN_INCIDENCE_GAP_DAYS = 1.0
+
 # A report older than the default window can still be the only grounded series
 # we have. Callers may opt into this longer ceiling rather than returning nothing.
 STALE_REPORT_MAX_AGE_DAYS = 1825.0
@@ -299,6 +303,14 @@ def estimate_from_incidence(
         raise ModelInputError(msg)
 
     age_days = (as_of - later_date).total_seconds() / 86400.0
+    if age_days < 0:
+        return PrevalenceUnavailable(
+            reason="report_after_as_of",
+            detail=(
+                "The later report was published after the time this estimate describes, "
+                "so it is excluded."
+            ),
+        )
     if age_days > max_report_age_days:
         return PrevalenceUnavailable(
             reason="report_too_old",
@@ -310,10 +322,13 @@ def estimate_from_incidence(
         )
 
     elapsed_days = (later_date - earlier_date).total_seconds() / 86400.0
-    if elapsed_days <= 0:
+    if elapsed_days < MIN_INCIDENCE_GAP_DAYS:
         return PrevalenceUnavailable(
             reason="no_elapsed_time",
-            detail="The two reports share a publication time, so no incidence can be derived.",
+            detail=(
+                "The two reports are less than a day apart, so the change between them "
+                "is a revision rather than a daily incidence."
+            ),
         )
 
     new_cases = later_cumulative - earlier_cumulative
@@ -419,6 +434,14 @@ def estimate_from_single_report(
         raise ModelInputError(msg)
 
     age_days = (as_of - report_date).total_seconds() / 86400.0
+    if age_days < 0:
+        return PrevalenceUnavailable(
+            reason="report_after_as_of",
+            detail=(
+                "The report was published after the time this estimate describes, "
+                "so it is excluded."
+            ),
+        )
     if age_days > max_report_age_days:
         return PrevalenceUnavailable(
             reason="report_too_old",
@@ -516,13 +539,24 @@ def prevalence_from_series(
             detail="no grounded case count is available for this origin",
         )
 
-    ordered = sorted(points, key=lambda point: point.published_at)
+    usable = [point for point in points if point.published_at <= as_of]
+    if not usable:
+        return PrevalenceUnavailable(
+            reason="report_after_as_of",
+            detail=(
+                "Every report for this origin was published after the time this "
+                "estimate describes."
+            ),
+        )
+
+    ordered = sorted(usable, key=lambda point: point.published_at)
     later = ordered[-1]
+    min_gap_seconds = MIN_INCIDENCE_GAP_DAYS * 86400.0
     earlier = next(
         (
             candidate
             for candidate in reversed(ordered[:-1])
-            if (later.published_at - candidate.published_at).total_seconds() > 0
+            if (later.published_at - candidate.published_at).total_seconds() >= min_gap_seconds
         ),
         None,
     )

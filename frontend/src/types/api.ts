@@ -250,6 +250,24 @@ export interface PathogenSummary {
   references: string[];
 }
 
+export type TravelBand = 'Low' | 'Moderate' | 'High' | 'Very high';
+
+export type TravelComponentKey = 'presence' | 'importation' | 'establishment' | 'connectivity';
+
+export interface TravelIndexComponent {
+  key: TravelComponentKey;
+  score: number | null;
+  weight: number;
+  available: boolean;
+}
+
+export interface TravelIndex {
+  score: number | null;
+  band: TravelBand | null;
+  components: TravelIndexComponent[];
+  note: string;
+}
+
 export interface RiskResponse {
   destination_iso3: string;
   destination_name: string;
@@ -257,6 +275,7 @@ export interface RiskResponse {
   horizon_days: number;
   computed_at: string;
   model_version: string;
+  travel_index: TravelIndex;
   presence: LocalPresence;
   importation: ImportationRisk;
   establishment: EstablishmentRisk;
@@ -265,6 +284,20 @@ export interface RiskResponse {
   warnings: ResponseWarning[];
   data: DataFreshness[];
   disclaimer: string;
+  calibration_status?: string;
+}
+
+export interface NextCountry {
+  iso3: string;
+  name: string;
+  probability: number;
+  arrival_rate_per_day: number;
+}
+
+export interface NextCountriesResponse {
+  calibration_status: string;
+  horizon_days: number;
+  countries: NextCountry[];
 }
 
 export interface DataSource {

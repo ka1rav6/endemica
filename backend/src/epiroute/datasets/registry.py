@@ -159,7 +159,8 @@ _SPECS: Final[tuple[DatasetSpec, ...]] = (
         fields_used=("airp_pr", "tra_meas", "time", "value"),
         coverage=(
             "34 reporting countries (EU, EFTA, UK, Western Balkans, Turkiye) "
-            "paired with airports worldwide. Annual, 2019 by default."
+            "paired with airports worldwide. Annual. The live table is 2024; "
+            "2019 and 2022 are kept for outbreak-era training."
         ),
         licence="Eurostat reuse policy: free reuse with source acknowledgement.",
         limitations=(
@@ -173,8 +174,8 @@ _SPECS: Final[tuple[DatasetSpec, ...]] = (
             "which loses within-country structure.",
         ),
         notes=(
-            "2019 is the default reference year: it avoids the COVID-19 "
-            "collapse and the partial, uneven recovery that followed."
+            "2024 is the live reference year. 2019 and 2022 are downloaded "
+            "beside it so a backtest can use flows from the outbreak's era."
         ),
     ),
     DatasetSpec(
@@ -211,6 +212,37 @@ _SPECS: Final[tuple[DatasetSpec, ...]] = (
             "OData $orderby, $top, $select and $count were verified against "
             "the live endpoint on 24 Oct 2026 and all work."
         ),
+    ),
+    DatasetSpec(
+        key="dot_t100",
+        name="US DOT International Report Passengers",
+        kind=DatasetKind.AIR_PASSENGERS,
+        url=None,
+        filename="dot_t100_2024.csv",
+        fields_used=("usg_apt", "fg_apt", "total"),
+        coverage="Flights touching the United States, monthly. EpiRoute reads calendar 2024.",
+        licence="US government work, public domain.",
+        limitations=(
+            "Rows have no direction column, so a pair is split using Eurostat's share "
+            "or in half when Eurostat has no figure.",
+            "Airport-to-country mapping uses OpenFlights, which is about a decade old.",
+        ),
+        required=False,
+        notes="Fetched by data-fetch from data.transportation.gov dataset xgub-n9bw.",
+    ),
+    DatasetSpec(
+        key="worldbank_population",
+        name="World Bank total population SP.POP.TOTL",
+        kind=DatasetKind.POPULATION,
+        url=None,
+        filename="worldbank_population_2024.json",
+        fields_used=("countryiso3code", "value"),
+        coverage="Global, annual. Used as a check on UN WPP, not as the denominator.",
+        licence="CC BY 4.0.",
+        limitations=(
+            "A gap above 5 percent is flagged. The UN figure remains the denominator.",
+        ),
+        required=False,
     ),
 )
 

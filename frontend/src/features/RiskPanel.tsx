@@ -1,4 +1,4 @@
-import type { OriginContribution, RiskResponse } from '@/types/api';
+import type { NextCountriesResponse, OriginContribution, RiskResponse } from '@/types/api';
 import {
   formatCount,
   formatDate,
@@ -11,10 +11,12 @@ import {
 import { MetricCard } from '@/components/MetricCard';
 import { ValueTypeBadge } from '@/components/ValueTypeBadge';
 import { Warnings } from '@/components/Warnings';
+import { riskColor } from '@/lib/riskColor';
 
 function PresenceCard({ risk }: { risk: RiskResponse }) {
-  const { presence } = risk;
+  const { presence, travel_index: travel } = risk;
   const reported = presence.status === 'reported';
+  const presenceScore = travel?.components.find((component) => component.key === 'presence')?.score;
   return (
     <section className="metric" data-testid="presence-card">
       <div className="metric__head">
@@ -23,7 +25,17 @@ function PresenceCard({ risk }: { risk: RiskResponse }) {
       </div>
       <div
         className={reported ? 'metric__value' : 'metric__value metric__value--unknown'}
-        style={reported ? { color: 'var(--outbreak)', fontSize: 22 } : undefined}
+        style={
+          reported
+            ? {
+                color:
+                  presenceScore === null || presenceScore === undefined
+                    ? 'var(--outbreak)'
+                    : riskColor(presenceScore),
+                fontSize: 22,
+              }
+            : undefined
+        }
         data-testid="presence-status"
       >
         {reported
@@ -124,7 +136,13 @@ function OriginRow({ origin }: { origin: OriginContribution }) {
   );
 }
 
-export function RiskPanel({ risk }: { risk: RiskResponse }) {
+export function RiskPanel({
+  risk,
+  nextCountries,
+}: {
+  risk: RiskResponse;
+  nextCountries?: NextCountriesResponse | null;
+}) {
   const { importation, establishment, pathogen } = risk;
   const aggregate = pathogen.scope === 'active';
 
@@ -139,8 +157,9 @@ export function RiskPanel({ risk }: { risk: RiskResponse }) {
           </span>
         </h2>
         <p style={{ margin: 0, fontSize: 12, color: 'var(--text-faint)' }}>
-          Three separate questions, three different inputs. Computed {relativeAge(risk.computed_at)}{' '}
-          with {risk.model_version} over a {risk.horizon_days}-day horizon.
+          The index above is a scenario summary. These three questions keep the separate inputs.
+          Computed {relativeAge(risk.computed_at)} with {risk.model_version} over a{' '}
+          {risk.horizon_days}-day horizon.
         </p>
       </div>
 
@@ -215,6 +234,25 @@ export function RiskPanel({ risk }: { risk: RiskResponse }) {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      <p className="metric__basis" data-testid="calibration-status">
+        Next-country model:{' '}
+        {risk.calibration_status === 'calibrated'
+          ? 'calibrated on held-out outbreaks'
+          : 'not validated — the number below is the uncalibrated scenario'}
+      </p>
+      {nextCountries && nextCountries.countries.length > 0 && (
+        <div className="sec">
+          <h2 className="sec__title">Most likely to report next</h2>
+          <ol>
+            {nextCountries.countries.map((country) => (
+              <li key={country.iso3}>
+                {country.name} — {formatPercent(country.probability)}
+              </li>
+            ))}
+          </ol>
         </div>
       )}
 

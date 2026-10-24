@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
@@ -115,6 +115,36 @@ class PathogenSummary(BaseModel):
     references: list[str] = Field(default_factory=list)
 
 
+TravelBand = Literal["Low", "Moderate", "High", "Very high"]
+TravelComponentKey = Literal["presence", "importation", "establishment", "connectivity"]
+
+
+class TravelIndexComponent(BaseModel):
+    """One input of the travel-risk index, scored 0–10 when it exists."""
+
+    model_config = ConfigDict(frozen=True)
+
+    key: TravelComponentKey
+    score: float | None = Field(default=None, ge=0, le=10)
+    weight: float = Field(ge=0, le=1)
+    available: bool
+
+
+class TravelIndex(BaseModel):
+    """Composite 0–10 scenario summary. Not a calibrated forecast.
+
+    ``score`` is null when every component is missing. ``note`` is the sentence
+    the UI shows under the number.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    score: float | None = Field(default=None, ge=0, le=10)
+    band: TravelBand | None = None
+    components: list[TravelIndexComponent]
+    note: str
+
+
 class RiskResponse(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -124,6 +154,7 @@ class RiskResponse(BaseModel):
     horizon_days: float
     computed_at: datetime
     model_version: str
+    travel_index: TravelIndex
 
     presence: LocalPresence
     importation: ImportationRisk
@@ -134,6 +165,7 @@ class RiskResponse(BaseModel):
     warnings: list[ResponseWarning] = Field(default_factory=list)
     data: list[DataFreshness] = Field(default_factory=list)
     disclaimer: str
+    calibration_status: str = "not_validated"
 
 
 class RiskQuery(BaseModel):
@@ -154,3 +186,4 @@ class RiskQuery(BaseModel):
     passenger_scale: Annotated[float, Field(gt=0, le=10)] = 1.0
     threshold: Annotated[float, Field(gt=0, lt=1)] = 0.5
     max_origins: Annotated[int, Field(ge=1, le=50)] = 10
+    as_of: datetime | None = None

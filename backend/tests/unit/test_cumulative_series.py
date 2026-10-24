@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from epiroute.repositories.outbreaks import CumulativePoint, _running_max
+from epiroute.repositories.outbreaks import CumulativePoint, _latest_episode, _running_max
 
 
 def _point(day: datetime, cases: int | None, deaths: int | None = None) -> CumulativePoint:
@@ -91,6 +91,15 @@ class TestAcrossOutbreaks:
         )
         assert [p.cases_confirmed for p in series] == [400, 600]
         assert series[-1].cases_confirmed == 600
+
+    def test_only_the_latest_episode_is_differenced(self) -> None:
+        episode = _latest_episode(
+            [
+                _point(START, 400),
+                _point(START + timedelta(days=800), 600),
+            ]
+        )
+        assert [point.cases_confirmed for point in episode] == [600]
 
     def test_deaths_restart_with_their_outbreak(self) -> None:
         series = _running_max(

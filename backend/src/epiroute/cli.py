@@ -13,6 +13,7 @@ import json
 import logging
 import sys
 from collections.abc import Callable, Sequence
+from pathlib import Path
 
 from epiroute.core.config import Settings, get_settings
 from epiroute.core.logging import configure_logging
@@ -156,6 +157,52 @@ def cmd_db_status(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 
 
+def _fetch_eurostat(*, force: bool) -> int:
+    """Download Eurostat passenger tables for the live year and the training years."""
+    from epiroute.datasets.eurostat import (
+        DEFAULT_REFERENCE_YEAR,
+        FLOW_YEARS,
+        download_all,
+        raw_filename,
+    )
+
+    settings = get_settings()
+    failures = 0
+    for year in FLOW_YEARS:
+        path = settings.raw_data_dir / raw_filename(year)
+        live = settings.raw_data_dir / "eurostat_avia_par.json.gz"
+        live_ready = year != DEFAULT_REFERENCE_YEAR or live.exists()
+        if path.exists() and live_ready and not force:
+            print(f"  {OK} eurostat_avia_par_{year}: already present")
+            continue
+        try:
+            written = download_all(year=year, settings=settings)
+        except Exception as exc:
+            failures += 1
+            print(f"  {BAD} eurostat_avia_par_{year}: {exc}")
+            continue
+        print(f"  {OK} eurostat_avia_par_{year}: {written.stat().st_size / 1e6:.1f} MB")
+    for label, fetch in _optional_fetches():
+        try:
+            written = fetch()
+        except Exception as exc:
+            print(f"  {BAD} {label}: {exc}")
+            continue
+        print(f"  {OK} {label}: {written.name}")
+    return failures
+
+
+def _optional_fetches() -> tuple[tuple[str, Callable[[], Path]], ...]:
+    from epiroute.datasets.dot_t100 import download as download_dot
+    from epiroute.datasets.worldbank import download as download_population
+
+    fetches: tuple[tuple[str, Callable[[], Path]], ...] = (
+        ("dot_t100", download_dot),
+        ("worldbank_population", download_population),
+    )
+    return fetches
+
+
 def cmd_data_fetch(args: argparse.Namespace) -> int:
     """Download the registered reference datasets."""
     from epiroute.datasets.fetch import fetch_all
@@ -172,10 +219,113 @@ def cmd_data_fetch(args: argparse.Namespace) -> int:
         else:
             print(f"  {OK} {result.key}: {result.bytes_written / 1e6:.1f} MB -> {result.path.name}")
 
+    wanted = set(args.only) if args.only else None
+    if wanted is None or "eurostat_avia_par" in wanted:
+        failures += _fetch_eurostat(force=args.force)
+
     if failures:
         print(f"\n{failures} of {len(results)} datasets failed. Existing files were not modified.")
         return 1
     print(f"\n{len(results)} datasets ready in {get_settings().raw_data_dir}")
+    return 0
+
+
+def cmd_labels_build(_args: argparse.Namespace) -> int:
+    """Download COVID and mpox first-report dates and write the audit sample."""
+    from epiroute.calibration.labels import build_labels
+
+    path = build_labels()
+    print(f"{OK} labels written to {path}")
+    return 0
+
+
+def cmd_train_model(_args: argparse.Namespace) -> int:
+    """Build the forecast panel and fit the hazard. The card says if it passed."""
+    from epiroute.calibration.panel import build_panel
+    from epiroute.calibration.train import train
+
+    build_panel()
+    card = train()
+    print(f"{OK} model card written to {card}")
+    return 0
+
+
+def cmd_validate_model(_args: argparse.Namespace) -> int:
+    """Print the calibration card. Exit 1 when the model is not validated."""
+    from epiroute.calibration.train import calibration_status, load_card
+
+    card = load_card()
+    status = calibration_status()
+    print(json.dumps({"status": status, "card": card}, indent=2, default=str))
+    return 0 if status == "calibrated" else 1
+
+
+def cmd_snapshot_build(_args: argparse.Namespace) -> int:
+    """Copy the model card and label audit into the offline snapshot directory."""
+    import shutil
+
+    settings = get_settings()
+    destination = settings.snapshot_data_dir
+    destination.mkdir(parents=True, exist_ok=True)
+    names = (
+        settings.processed_data_dir / "model_card.json",
+        settings.raw_data_dir.parent / "labels" / "label_audit.json",
+        settings.processed_data_dir / "dot_eurostat_crosscheck.json",
+    )
+    copied = 0
+    for path in names:
+        if path.exists():
+            shutil.copy2(path, destination / path.name)
+            copied += 1
+            print(f"  {OK} {path.name}")
+    if copied == 0:
+        print(f"{BAD} nothing to snapshot; build the tables and the model card first")
+        return 1
+    print(f"{OK} snapshot in {destination}")
+    return 0
+
+
+def cmd_snapshot_load(_args: argparse.Namespace) -> int:
+    """Restore a snapshotted model card into the processed directory."""
+    import shutil
+
+    settings = get_settings()
+    source = settings.snapshot_data_dir / "model_card.json"
+    if not source.exists():
+        print(f"{BAD} no snapshot at {source}")
+        return 1
+    settings.processed_data_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, settings.processed_data_dir / "model_card.json")
+    print(f"{OK} restored {source.name}")
+    return 0
+
+
+def cmd_qa_data(_args: argparse.Namespace) -> int:
+    """Check passenger and population tables against their contracts."""
+    import pandas as pd
+
+    from epiroute.qa.contracts import check_flows, check_populations
+
+    settings = get_settings()
+    failures: list[str] = []
+    flows = settings.processed_data_dir / "country_flows.parquet"
+    countries = settings.processed_data_dir / "countries.parquet"
+    if flows.exists():
+        failures.extend(
+            f"{item.check}: {item.detail}" for item in check_flows(pd.read_parquet(flows))
+        )
+    else:
+        failures.append("flows_present: country_flows.parquet is missing")
+    if countries.exists():
+        failures.extend(
+            f"{item.check}: {item.detail}"
+            for item in check_populations(pd.read_parquet(countries))
+        )
+    if failures:
+        for failure in failures:
+            print(f"{BAD} {failure}")
+        return 1
+    print(f"{OK} data contracts passed")
     return 0
 
 
@@ -516,6 +666,24 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = subparsers.add_parser("data-validate", help="Validate the processed tables.")
     p.set_defaults(func=cmd_data_validate)
+
+    p = subparsers.add_parser("labels-build", help="Download historical first-report dates.")
+    p.set_defaults(func=cmd_labels_build)
+
+    p = subparsers.add_parser("train-model", help="Fit the hazard and write the model card.")
+    p.set_defaults(func=cmd_train_model)
+
+    p = subparsers.add_parser("validate-model", help="Show whether the model card passed.")
+    p.set_defaults(func=cmd_validate_model)
+
+    p = subparsers.add_parser("qa-data", help="Check processed tables against data contracts.")
+    p.set_defaults(func=cmd_qa_data)
+
+    p = subparsers.add_parser("snapshot-build", help="Copy the model card into data/snapshot.")
+    p.set_defaults(func=cmd_snapshot_build)
+
+    p = subparsers.add_parser("snapshot-load", help="Restore the snapshotted model card.")
+    p.set_defaults(func=cmd_snapshot_load)
 
     p = subparsers.add_parser("model-fit", help="Fit the gravity model and report held-out error.")
     p.add_argument("--population-year", type=int, default=2024)

@@ -56,6 +56,15 @@ export const getRisk = (
     signal ? { signal } : undefined,
   );
 
+export const getNextCountries = (
+  params: { disease_key?: string; pathogen?: string; horizon_days?: number; limit?: number } = {},
+  signal?: AbortSignal,
+): Promise<import('@/types/api').NextCountriesResponse> =>
+  apiGet(`${V1}/risk/next`, params, signal ? { signal } : undefined);
+
+export const getModelCard = (signal?: AbortSignal): Promise<{ status: string }> =>
+  apiGet(`${V1}/model/card`, undefined, signal ? { signal } : undefined);
+
 export const getSources = (signal?: AbortSignal): Promise<SourceListResponse> =>
   apiGet<SourceListResponse>(`${V1}/sources`, undefined, signal ? { signal } : undefined);
 

@@ -14,6 +14,8 @@ analytic results and keeps the three risk concepts separable:
   effective distance over the passenger-flow network.
 * :mod:`epiroute.epidemiology.profiles` — per-pathogen parameter profiles,
   each carrying the citation for its values.
+* :mod:`epiroute.epidemiology.travel_index` — a 0–10 composite of the inputs
+  above. A scenario summary, not a validated forecast.
 * :mod:`epiroute.epidemiology.scenario` — upper-band threshold markers.
 
 A passing test here establishes that the implementation matches its documented

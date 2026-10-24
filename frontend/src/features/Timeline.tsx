@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import type { DiseaseTimelinePoint } from '@/types/api';
 import { formatCount } from '@/lib/format';
+import { riskColor } from '@/lib/riskColor';
 
 interface Props {
   points: DiseaseTimelinePoint[];
@@ -59,6 +60,9 @@ export function Timeline({
 
   const maxReports = Math.max(...points.map((point) => point.report_count), 1);
   const active = points.find((point) => point.year === current);
+  const span = Math.max(last - first, 1);
+  const colorFor = (value: number) => riskColor(((value - first) / span) * 10);
+  const yearColor = colorFor(current);
   const reached = points
     .filter((point) => point.year <= current)
     .reduce((total, point) => total + point.new_country_count, 0);
@@ -66,7 +70,13 @@ export function Timeline({
   const atEnd = current >= last;
 
   return (
-    <div className="timeline">
+    <div
+      className="timeline"
+      style={{
+        ['--year-risk' as string]: yearColor,
+        ['--risk-low' as string]: riskColor(0),
+      }}
+    >
       <div className="timeline__head">
         <button
           type="button"
@@ -130,6 +140,9 @@ export function Timeline({
               `${point.new_country_count} new country(ies), ` +
               `${point.cumulative_country_count} affected in total`
             }
+            style={{
+              ['--bar' as string]: point.year <= current ? colorFor(point.year) : undefined,
+            }}
             onClick={() => {
               onPlayingChange(false);
               onYearChange(point.year);
@@ -137,7 +150,10 @@ export function Timeline({
           >
             <span
               className="tlbar__fill"
-              style={{ height: `${(point.report_count / maxReports) * 100}%` }}
+              style={{
+                height: `${(point.report_count / maxReports) * 100}%`,
+                ...(point.year <= current ? { background: colorFor(point.year) } : {}),
+              }}
             />
             {point.new_country_count > 0 && <span className="tlbar__new" />}
             <span className="visually-hidden">

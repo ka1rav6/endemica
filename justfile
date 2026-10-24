@@ -367,6 +367,22 @@ model-fit *args:
 model-report:
     "{{ py }}" -m epiroute.cli model-report
 
+# Download historical first-report dates and write a 20-row audit.
+labels-build:
+    "{{ py }}" -m epiroute.cli labels-build
+
+# Fit the next-country hazard and write data/processed/model_card.json.
+train-model:
+    "{{ py }}" -m epiroute.cli train-model
+
+# Print the model card and exit non-zero when it is not validated.
+validate-model:
+    "{{ py }}" -m epiroute.cli validate-model
+
+# Check processed passenger and population tables.
+qa-data:
+    "{{ py }}" -m epiroute.cli qa-data
+
 # Run a WHO Disease Outbreak News ingestion pass.
 data-ingest *args:
     "{{ py }}" -m epiroute.cli ingest {{ args }}

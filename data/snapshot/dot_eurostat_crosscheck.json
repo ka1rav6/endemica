@@ -1,0 +1,173 @@
+{
+  "agreement_rate": 0.8095238095238095,
+  "pairs": [
+    {
+      "origin_iso3": "USA",
+      "dest_iso3": "FRA",
+      "dot_passengers": 9233995.0,
+      "eurostat_passengers": 8224292.0,
+      "ratio": 1.1227708111531058,
+      "agree": true
+    },
+    {
+      "origin_iso3": "SWE",
+      "dest_iso3": "USA",
+      "dot_passengers": 267144.0,
+      "eurostat_passengers": 187026.0,
+      "ratio": 1.4283789419652881,
+      "agree": false
+    },
+    {
+      "origin_iso3": "GRC",
+      "dest_iso3": "USA",
+      "dot_passengers": 1198027.0,
+      "eurostat_passengers": 1280687.0,
+      "ratio": 0.9354565166976787,
+      "agree": true
+    },
+    {
+      "origin_iso3": "POL",
+      "dest_iso3": "USA",
+      "dot_passengers": 757112.0,
+      "eurostat_passengers": 711875.0,
+      "ratio": 1.0635462686567163,
+      "agree": true
+    },
+    {
+      "origin_iso3": "ISL",
+      "dest_iso3": "USA",
+      "dot_passengers": 2166115.0,
+      "eurostat_passengers": 2158340.0,
+      "ratio": 1.0036023054755043,
+      "agree": true
+    },
+    {
+      "origin_iso3": "AUT",
+      "dest_iso3": "USA",
+      "dot_passengers": 412624.0,
+      "eurostat_passengers": 661208.0,
+      "ratio": 0.6240456860776035,
+      "agree": false
+    },
+    {
+      "origin_iso3": "DEU",
+      "dest_iso3": "USA",
+      "dot_passengers": 10227751.0,
+      "eurostat_passengers": 10466042.0,
+      "ratio": 0.9772319851191119,
+      "agree": true
+    },
+    {
+      "origin_iso3": "USA",
+      "dest_iso3": "NOR",
+      "dot_passengers": 193137.0,
+      "eurostat_passengers": 125686.0,
+      "ratio": 1.5366627945833267,
+      "agree": false
+    },
+    {
+      "origin_iso3": "ESP",
+      "dest_iso3": "USA",
+      "dot_passengers": 5331525.0,
+      "eurostat_passengers": 5123820.0,
+      "ratio": 1.0405371383069664,
+      "agree": true
+    },
+    {
+      "origin_iso3": "IRL",
+      "dest_iso3": "USA",
+      "dot_passengers": 3853372.0,
+      "eurostat_passengers": 3711429.0,
+      "ratio": 1.0382448377700342,
+      "agree": true
+    },
+    {
+      "origin_iso3": "PRT",
+      "dest_iso3": "USA",
+      "dot_passengers": 2419135.0,
+      "eurostat_passengers": 2446249.0,
+      "ratio": 0.9889160915344268,
+      "agree": true
+    },
+    {
+      "origin_iso3": "CHE",
+      "dest_iso3": "USA",
+      "dot_passengers": 2731454.0,
+      "eurostat_passengers": 2644055.0,
+      "ratio": 1.0330549099772888,
+      "agree": true
+    },
+    {
+      "origin_iso3": "ITA",
+      "dest_iso3": "USA",
+      "dot_passengers": 5370070.0,
+      "eurostat_passengers": 5441008.0,
+      "ratio": 0.9869623422718732,
+      "agree": true
+    },
+    {
+      "origin_iso3": "DNK",
+      "dest_iso3": "USA",
+      "dot_passengers": 1247462.0,
+      "eurostat_passengers": 1194024.0,
+      "ratio": 1.044754544297267,
+      "agree": true
+    },
+    {
+      "origin_iso3": "NLD",
+      "dest_iso3": "USA",
+      "dot_passengers": 5885816.0,
+      "eurostat_passengers": 5803150.0,
+      "ratio": 1.0142450221000663,
+      "agree": true
+    },
+    {
+      "origin_iso3": "BEL",
+      "dest_iso3": "USA",
+      "dot_passengers": 972861.0,
+      "eurostat_passengers": 999209.0,
+      "ratio": 0.9736311422335067,
+      "agree": true
+    },
+    {
+      "origin_iso3": "TUR",
+      "dest_iso3": "USA",
+      "dot_passengers": 3846500.0,
+      "eurostat_passengers": 3858994.0,
+      "ratio": 0.996762368638044,
+      "agree": true
+    },
+    {
+      "origin_iso3": "SRB",
+      "dest_iso3": "USA",
+      "dot_passengers": 81060.0,
+      "eurostat_passengers": 81615.0,
+      "ratio": 0.9931997794523065,
+      "agree": true
+    },
+    {
+      "origin_iso3": "FIN",
+      "dest_iso3": "USA",
+      "dot_passengers": 402532.0,
+      "eurostat_passengers": 268639.0,
+      "ratio": 1.4984123675266807,
+      "agree": false
+    },
+    {
+      "origin_iso3": "ESP",
+      "dest_iso3": "PRI",
+      "dot_passengers": 191009.0,
+      "eurostat_passengers": 182958.0,
+      "ratio": 1.044004634943539,
+      "agree": true
+    },
+    {
+      "origin_iso3": "HRV",
+      "dest_iso3": "USA",
+      "dot_passengers": 28323.0,
+      "eurostat_passengers": 29223.0,
+      "ratio": 0.9692023406221127,
+      "agree": true
+    }
+  ]
+}

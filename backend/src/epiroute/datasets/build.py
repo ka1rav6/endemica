@@ -45,6 +45,29 @@ class BuildResult:
     written: tuple[Path, ...]
 
 
+def _write_era_flows(raw: Path, out: Path) -> None:
+    """Observed-only passenger tables for the years a backtest is allowed to use."""
+    from epiroute.datasets.eurostat import FLOW_YEARS, load_observed_flows, raw_filename
+
+    for year in FLOW_YEARS:
+        path = raw / raw_filename(year)
+        if not path.exists():
+            continue
+        observed = load_observed_flows(path)
+        rows = [
+            {
+                "origin_iso3": key[0],
+                "dest_iso3": key[1],
+                "passengers_per_day": flow.passengers_per_year / 365.0,
+                "reference_period": str(year),
+                "source": flow.source,
+                "value_type": ValueType.OBSERVED.value,
+            }
+            for key, flow in observed.items()
+        ]
+        pd.DataFrame(rows).to_parquet(out / f"flows_{year}.parquet", index=False)
+
+
 def _require(path: Path, dataset_key: str) -> Path:
     if not path.exists():
         spec = get_spec(dataset_key)
@@ -165,6 +188,28 @@ def build_processed_tables(
 
     eurostat_path = raw / get_spec("eurostat_avia_par").filename
     observed = load_observed_flows(eurostat_path) if eurostat_path.exists() else {}
+    dot_path = raw / "dot_t100_2024.csv"
+    if dot_path.exists() and observed:
+        from epiroute.datasets.dot_t100 import (
+            agreement_rate,
+            direct_flows,
+            undirected_country_totals,
+        )
+
+        dot_directed, dot_checks = direct_flows(
+            undirected_country_totals(dot_path, airports), observed, year=2024
+        )
+        for key, flow in dot_directed.items():
+            if key not in observed:
+                observed[key] = flow
+        (out / "dot_eurostat_crosscheck.json").write_text(
+            json.dumps(
+                {"agreement_rate": agreement_rate(dot_checks), "pairs": dot_checks},
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+    _write_era_flows(raw, out)
 
     gravity: GravityFit | None = None
     flow_rows: list[dict[str, object]] = []
@@ -217,6 +262,8 @@ def build_processed_tables(
                     "reference_period": str(flow.reference_year),
                     "uncertainty_factor": None,
                     "direct_route_count": topology_features.get(key, (0, 0))[0],
+                    "cross_check_source": flow.cross_check_source,
+                    "cross_check_ratio": flow.cross_check_ratio,
                 }
             )
 
@@ -248,6 +295,8 @@ def build_processed_tables(
                         has_direct_routes=has_routes
                     ),
                     "direct_route_count": features.route_count,
+                    "cross_check_source": None,
+                    "cross_check_ratio": None,
                 }
             )
 

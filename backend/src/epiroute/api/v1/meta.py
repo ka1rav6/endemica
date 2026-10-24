@@ -67,6 +67,20 @@ def get_gravity_model(session: DbSession) -> GravityModelOut:
 
 
 @router.get(
+    "/model/card",
+    summary="Held-out calibration card. Missing means the model is not validated.",
+)
+def get_model_card() -> dict[str, object]:
+    from epiroute.calibration.train import calibration_status, load_card
+
+    card = load_card()
+    if card is None:
+        return {"status": "not_validated", "passed": False}
+    card["status"] = calibration_status()
+    return card
+
+
+@router.get(
     "/runs",
     response_model=list[IngestionRunOut],
     summary="Recent ingestion runs, including failures",

@@ -53,7 +53,8 @@ REPORTING_COUNTRIES: tuple[str, ...] = (
     "ba",
 )
 
-DEFAULT_REFERENCE_YEAR = 2019
+DEFAULT_REFERENCE_YEAR = 2024
+FLOW_YEARS: tuple[int, ...] = (2024, 2022, 2019)
 
 # Eurostat reports the geo dimension as <RC>_<ICAO>_<PC>_<ICAO>; the two-letter
 # prefixes are the reporting and partner country codes.
@@ -70,6 +71,9 @@ class ObservedFlow:
     passengers_per_year: float
     reference_year: int
     airport_pair_count: int
+    source: str = "eurostat_avia_par"
+    cross_check_source: str | None = None
+    cross_check_ratio: float | None = None
 
 
 def _parse_airport_pair(code: str) -> tuple[str, str] | None:
@@ -161,6 +165,11 @@ def fetch_reporting_country(
     return out
 
 
+def raw_filename(year: int) -> str:
+    """Year-specific archive name. The live year is also copied to the registry name."""
+    return f"eurostat_avia_par_{year}.json.gz"
+
+
 def download_all(
     *,
     year: int = DEFAULT_REFERENCE_YEAR,
@@ -168,7 +177,7 @@ def download_all(
     countries: tuple[str, ...] = REPORTING_COUNTRIES,
 ) -> Path:
     settings = settings or get_settings()
-    target = settings.raw_data_dir / "eurostat_avia_par.json.gz"
+    target = settings.raw_data_dir / raw_filename(year)
     target.parent.mkdir(parents=True, exist_ok=True)
 
     collected: dict[str, dict[str, dict[str, object]]] = {}
@@ -183,8 +192,13 @@ def download_all(
         raise RuntimeError(msg)
 
     document = {"reference_year": year, "tables": collected}
+    payload = json.dumps(document)
     with gzip.open(target, "wt", encoding="utf-8") as handle:
-        json.dump(document, handle)
+        handle.write(payload)
+    if year == DEFAULT_REFERENCE_YEAR:
+        live = settings.raw_data_dir / "eurostat_avia_par.json.gz"
+        with gzip.open(live, "wt", encoding="utf-8") as handle:
+            handle.write(payload)
     return target
 
 
@@ -193,8 +207,13 @@ def load_observed_flows(path: Path) -> dict[tuple[str, str], ObservedFlow]:
         document = json.load(handle)
 
     year = int(document.get("reference_year", DEFAULT_REFERENCE_YEAR))
-    totals: dict[tuple[str, str], float] = defaultdict(float)
-    pair_counts: dict[tuple[str, str], int] = defaultdict(int)
+    # Departures and arrivals are stored apart. When both Germany's departures
+    # and France's arrivals describe DE→FR, adding them doubles the route.
+    # The departure count is kept; arrivals fill routes the origin does not report.
+    departures: dict[tuple[str, str], float] = defaultdict(float)
+    arrivals: dict[tuple[str, str], float] = defaultdict(float)
+    departure_pairs: dict[tuple[str, str], int] = defaultdict(int)
+    arrival_pairs: dict[tuple[str, str], int] = defaultdict(int)
 
     for payloads in document.get("tables", {}).values():
         for measure, payload in payloads.items():
@@ -209,17 +228,28 @@ def load_observed_flows(path: Path) -> dict[tuple[str, str], ObservedFlow]:
                 key = (
                     (reporting, partner) if measure == _MEASURE_DEPARTURES else (partner, reporting)
                 )
-                totals[key] += value
-                pair_counts[key] += 1
+                if measure == _MEASURE_DEPARTURES:
+                    departures[key] += value
+                    departure_pairs[key] += 1
+                else:
+                    arrivals[key] += value
+                    arrival_pairs[key] += 1
 
-    return {
-        key: ObservedFlow(
+    flows: dict[tuple[str, str], ObservedFlow] = {}
+    for key in set(departures) | set(arrivals):
+        if departures.get(key, 0.0) > 0:
+            total = departures[key]
+            pairs = departure_pairs[key]
+        else:
+            total = arrivals.get(key, 0.0)
+            pairs = arrival_pairs[key]
+        if total <= 0:
+            continue
+        flows[key] = ObservedFlow(
             origin_iso3=key[0],
             dest_iso3=key[1],
             passengers_per_year=total,
             reference_year=year,
-            airport_pair_count=pair_counts[key],
+            airport_pair_count=pairs,
         )
-        for key, total in totals.items()
-        if total > 0
-    }
+    return flows

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 from sqlalchemy import Select, func, or_, select
@@ -21,6 +21,8 @@ class CumulativePoint:
     report_identifier: str
     report_url: str
     outbreak_started_on: date | None = None
+    source_name: str = ""
+    disease_id: str = ""
 
 
 def get_report(session: Session, report_id: str) -> OutbreakReport | None:
@@ -152,21 +154,10 @@ def verified_observations_for_country(
     return [(obs, rep) for obs, rep in session.execute(statement)]
 
 
-def cumulative_series(
-    session: Session,
-    country_iso3: str,
-    pathogen_key: str,
-    *,
-    disease_label: str | None = None,
-    disease_key: str | None = None,
+def _points_for_rows(
+    rows: list[tuple[OutbreakObservation, OutbreakReport]],
 ) -> list[CumulativePoint]:
-    rows = verified_observations_for_country(
-        session,
-        country_iso3,
-        pathogen_key=pathogen_key,
-        disease_label=disease_label,
-        disease_key=disease_key,
-    )
+    """One cumulative point per report, for rows that already share a source and disease."""
     by_report: dict[str, CumulativePoint] = {}
     for observation, report in rows:
         if report.published_at is None:
@@ -184,10 +175,92 @@ def cumulative_series(
             report_identifier=report.source_identifier,
             report_url=report.source_url,
             outbreak_started_on=find_outbreak_start(report.narrative_text or ""),
+            source_name=report.source_name,
+            disease_id=report.disease_key or (report.disease_label or ""),
         )
+    ordered = sorted(by_report.values(), key=lambda point: point.published_at)
+    return _running_max(_latest_episode(ordered))
 
-    series = sorted(by_report.values(), key=lambda p: p.published_at)
-    return _running_max(series)
+
+def _aware(value: datetime) -> datetime:
+    """Treat a naive timestamp as UTC so it can be compared with stored times."""
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value
+
+
+def published_at_or_before(published: datetime | None, as_of: datetime | None) -> bool:
+    """Whether a report had been published by ``as_of``. Missing dates are kept."""
+    if published is None or as_of is None:
+        return True
+    return _aware(published) <= _aware(as_of)
+
+
+def _latest_episode(points: list[CumulativePoint]) -> list[CumulativePoint]:
+    """Keep only the points that belong to the newest outbreak in the series.
+
+    Differencing across the restart would treat a new outbreak's first total as
+    a change from an epidemic that ended years earlier.
+    """
+    if not points:
+        return []
+    start = 0
+    best: int | None = None
+    previous: CumulativePoint | None = None
+    for index, point in enumerate(points):
+        if _starts_new_episode(point, best, previous):
+            start = index
+            best = point.cases_confirmed
+        else:
+            best = _greater(best, point.cases_confirmed)
+        previous = point
+    return points[start:]
+
+
+def choose_single_series(
+    groups: dict[tuple[str, str], list[CumulativePoint]],
+) -> list[CumulativePoint]:
+    """Pick one source and one disease. Never difference counts across either.
+
+    The chosen series is the one whose latest report is newest. A longer series
+    breaks a tie, so a single later bulletin does not discard a fuller source
+    published at the same moment.
+    """
+    ranked = [
+        (series[-1].published_at, len(series), series) for series in groups.values() if series
+    ]
+    if not ranked:
+        return []
+    ranked.sort(key=lambda item: (item[0], item[1]))
+    return ranked[-1][2]
+
+
+def cumulative_series(
+    session: Session,
+    country_iso3: str,
+    pathogen_key: str,
+    *,
+    disease_label: str | None = None,
+    disease_key: str | None = None,
+    as_of: datetime | None = None,
+) -> list[CumulativePoint]:
+    rows = [
+        (observation, report)
+        for observation, report in verified_observations_for_country(
+            session,
+            country_iso3,
+            pathogen_key=pathogen_key,
+            disease_label=disease_label,
+            disease_key=disease_key,
+        )
+        if published_at_or_before(report.published_at, as_of)
+    ]
+    groups: dict[tuple[str, str], list[tuple[OutbreakObservation, OutbreakReport]]] = {}
+    for observation, report in rows:
+        disease_id = report.disease_key or (report.disease_label or "").casefold()
+        groups.setdefault((report.source_name, disease_id), []).append((observation, report))
+    built = {key: _points_for_rows(group) for key, group in groups.items()}
+    return choose_single_series(built)
 
 
 def _greater(a: int | None, b: int | None) -> int | None:
@@ -247,6 +320,8 @@ def _running_max(series: list[CumulativePoint]) -> list[CumulativePoint]:
                 report_identifier=point.report_identifier,
                 report_url=point.report_url,
                 outbreak_started_on=point.outbreak_started_on,
+                source_name=point.source_name,
+                disease_id=point.disease_id,
             )
         )
         previous = point
@@ -260,6 +335,7 @@ def countries_with_active_outbreaks(
     disease_label: str | None = None,
     disease_key: str | None = None,
     since: datetime | None = None,
+    until: datetime | None = None,
 ) -> list[str]:
     statement = (
         select(OutbreakObservation.country_iso3)
@@ -278,6 +354,8 @@ def countries_with_active_outbreaks(
             )
     if since:
         statement = statement.where(OutbreakReport.published_at >= since)
+    if until is not None:
+        statement = statement.where(OutbreakReport.published_at <= _aware(until))
     return list(session.scalars(statement))
 
 
