@@ -115,7 +115,7 @@ export default function App() {
   const [selectedIso3, setSelectedIso3] = useState<string | null>(null);
   const [comparisonIso3, setComparisonIso3] = useState<string | null>(null);
   const [diseaseKey, setDiseaseKey] = useState<string | null>(null);
-  const [activeMode, setActiveMode] = useState(false);
+  const [activeMode, setActiveMode] = useState(true);
   const [yearCeiling, setYearCeiling] = useState<number | null>(null);
   const [playing, setPlaying] = useState(false);
   const [showFlows, setShowFlows] = useState(false);
@@ -130,6 +130,7 @@ export default function App() {
   const panelWide = useMinWidth(981);
   const railHidden = railCollapsed && railWide;
   const panelHidden = panelCollapsed && panelWide;
+  const landed = useRef(false);
   const railBodyRef = useRef<HTMLDivElement>(null);
   const railTabRef = useRef<HTMLButtonElement>(null);
   const panelBodyRef = useRef<HTMLDivElement>(null);
@@ -209,12 +210,16 @@ export default function App() {
   );
 
   const countryList = useMemo(() => countries.data?.items ?? [], [countries.data]);
+  const activeKeys = useMemo(
+    () => new Set((active.data?.diseases ?? []).map((disease) => disease.disease_key)),
+    [active.data],
+  );
   const diseaseList = useMemo(() => diseases.data ?? [], [diseases.data]);
 
   // Open on the country named by the newest report, so the first screen shows
   // a live outbreak rather than whichever country sorts first alphabetically.
   useEffect(() => {
-    if (selectedIso3 !== null || countryList.length === 0) return;
+    if (landed.current || countryList.length === 0) return;
     // Wait for the report list, otherwise the country table lands first and
     // the pick falls back to whichever country sorts first alphabetically.
     if (outbreaks.loading && outbreaks.error === null) return;
@@ -223,20 +228,26 @@ export default function App() {
       countryList.some((country) => country.iso3 === iso3),
     );
     const withOutbreak = countryList.find((country) => country.has_reported_outbreak);
+    landed.current = true;
     setSelectedIso3(known ?? withOutbreak?.iso3 ?? countryList[0]?.iso3 ?? null);
-  }, [countryList, outbreaks.data, outbreaks.loading, outbreaks.error, selectedIso3]);
+  }, [countryList, outbreaks.data, outbreaks.loading, outbreaks.error]);
 
   const activeRisk =
     risk.data && selectedIso3 && risk.data.destination_iso3 === selectedIso3 ? risk.data : null;
 
   // With no disease chosen, follow the one the selected country actually
   // reports, so the map and the panels never disagree about the subject.
-  const effectiveDiseaseKey = diseaseKey ?? activeRisk?.pathogen.disease_key ?? null;
-  const effectiveDiseaseName =
-    spread.data?.disease_name ??
-    diseaseList.find((entry) => entry.disease_key === effectiveDiseaseKey)?.disease_name ??
-    activeRisk?.pathogen.disease_name ??
-    null;
+  const effectiveDiseaseKey = activeMode
+    ? null
+    : (diseaseKey ?? activeRisk?.pathogen.disease_key ?? null);
+  const activeCount = active.data?.disease_count ?? activeKeys.size;
+  const activeLabel = `all ${activeCount} active disease${activeCount === 1 ? '' : 's'}`;
+  const effectiveDiseaseName = activeMode
+    ? activeLabel
+    : (spread.data?.disease_name ??
+      diseaseList.find((entry) => entry.disease_key === effectiveDiseaseKey)?.disease_name ??
+      activeRisk?.pathogen.disease_name ??
+      null);
 
   const followed = useAsync(
     (signal) =>
@@ -263,11 +274,6 @@ export default function App() {
     setPlaying(false);
   }, [effectiveDiseaseKey]);
 
-  const activeKeys = useMemo(
-    () => new Set((active.data?.diseases ?? []).map((disease) => disease.disease_key)),
-    [active.data],
-  );
-
   const activeEntries = useMemo(
     () => activeCountryEntries(active.data?.countries ?? []),
     [active.data],
@@ -292,7 +298,13 @@ export default function App() {
     return carrying.length > 0 ? carrying : inbound.slice(0, 12);
   }, [routes.data, originIso3, selectedIso3]);
 
-  const handleCountryClick = useCallback((iso3: string, additive: boolean) => {
+  const handleCountryClick = useCallback((iso3: string | null, additive: boolean) => {
+    if (iso3 === null) {
+      // A click on open water drops back to the overview.
+      setSelectedIso3(null);
+      setComparisonIso3(null);
+      return;
+    }
     if (additive) {
       setComparisonIso3((current) => (current === iso3 ? null : iso3));
       setTab('compare');
@@ -337,9 +349,6 @@ export default function App() {
         countries={countryList}
         selectedIso3={selectedIso3}
         onSelect={setSelectedIso3}
-        diseases={diseaseList}
-        selectedDiseaseKey={diseaseKey}
-        onSelectDisease={setDiseaseKey}
         health={health.data}
         showFlows={showFlows}
         onToggleFlows={() => {
@@ -405,11 +414,7 @@ export default function App() {
             comparisonIso3={comparisonIso3}
             onSelect={handleCountryClick}
             spread={mapSpread}
-            diseaseName={
-              activeMode
-                ? `${active.data?.disease_count ?? 0} active diseases`
-                : effectiveDiseaseName
-            }
+            diseaseName={activeMode ? activeLabel : effectiveDiseaseName}
             activeMode={activeMode}
             yearCeiling={activeMode ? null : yearCeiling}
             origins={activeRisk?.importation.top_origins ?? []}
@@ -426,14 +431,16 @@ export default function App() {
             selectedRisk={activeRisk?.travel_index.score ?? null}
             spreadSpan={spreadSpan}
           />
-          <Timeline
-            points={timelinePoints}
-            year={yearCeiling}
-            onYearChange={setYearCeiling}
-            playing={playing}
-            onPlayingChange={setPlaying}
-            diseaseName={effectiveDiseaseName}
-          />
+          {!activeMode && (
+            <Timeline
+              points={timelinePoints}
+              year={yearCeiling}
+              onYearChange={setYearCeiling}
+              playing={playing}
+              onPlayingChange={setPlaying}
+              diseaseName={effectiveDiseaseName}
+            />
+          )}
         </div>
 
         <div
@@ -488,9 +495,12 @@ export default function App() {
                     <>
                       Focused on{' '}
                       <strong style={{ color: 'var(--accent)' }}>{effectiveDiseaseName}</strong>
-                      {activeRisk?.pathogen.disease_source === 'destination_record' && !diseaseKey
-                        ? ' — the most recent disease reported here.'
-                        : '.'}
+                      {activeMode
+                        ? ' — reported anywhere in the last 90 days.'
+                        : activeRisk?.pathogen.disease_source === 'destination_record' &&
+                            !diseaseKey
+                          ? ' — the most recent disease reported here.'
+                          : '.'}
                     </>
                   ) : (
                     'Pick a disease to focus the map and the estimates.'

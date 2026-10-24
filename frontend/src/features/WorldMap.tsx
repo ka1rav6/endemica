@@ -40,7 +40,8 @@ interface Props {
   countries: Country[];
   selectedIso3: string | null;
   comparisonIso3: string | null;
-  onSelect: (iso3: string, additive: boolean) => void;
+  /** ``null`` clears the selection, which the ocean click does. */
+  onSelect: (iso3: string | null, additive: boolean) => void;
   spread: MapSpreadEntry[];
   diseaseName: string | null;
   activeMode?: boolean;
@@ -96,25 +97,6 @@ function arcFeatures(
         type: 'LineString',
         coordinates: greatCircleLine({ lat: oLat, lon: oLon }, { lat: dLat, lon: dLon }),
       },
-    });
-  }
-  return { type: 'FeatureCollection', features };
-}
-
-function markerFeatures(
-  countries: Country[],
-  entries: MapSpreadEntry[],
-  limit: number,
-): FeatureCollection<GeoPoint> {
-  const byIso3 = new Map(countries.map((country) => [country.iso3, country]));
-  const features: Feature<GeoPoint>[] = [];
-  for (const entry of entries.slice(0, limit)) {
-    const country = byIso3.get(entry.iso3);
-    if (!country || country.centroid_lat === null || country.centroid_lon === null) continue;
-    features.push({
-      type: 'Feature',
-      properties: { label: String(entry.arrivalOrder), iso3: entry.iso3 },
-      geometry: { type: 'Point', coordinates: [country.centroid_lon, country.centroid_lat] },
     });
   }
   return { type: 'FeatureCollection', features };
@@ -300,7 +282,6 @@ export function WorldMap({
       canvasContextAttributes: { antialias: true },
     });
     mapRef.current = map;
-    (window as unknown as Record<string, unknown>)['__map'] = map;
 
     map.addControl(
       new NavigationControl({ showCompass: false, visualizePitch: false }),
@@ -340,15 +321,6 @@ export function WorldMap({
 
     const animate = (now: number) => {
       if (cancelled) return;
-      if (map.getLayer('arc-modelled')) {
-        const phase = (now / 950) % 1;
-        map.setPaintProperty('arc-modelled', 'line-dasharray', [
-          0.25 + phase,
-          1.15,
-          1.35 - phase,
-          1.15,
-        ]);
-      }
       const flow = flowAnimRef.current;
       if (flow && map.getLayer('spread-flow')) {
         const raw = Math.min(1, (now - flow.start) / flow.duration);
@@ -542,27 +514,6 @@ export function WorldMap({
             },
           });
 
-          map.addSource('order', {
-            type: 'geojson',
-            data: { type: 'FeatureCollection', features: [] },
-          });
-          map.addLayer({
-            id: 'order-labels',
-            type: 'symbol',
-            source: 'order',
-            layout: {
-              'text-field': ['get', 'label'],
-              'text-size': 10,
-              'text-allow-overlap': false,
-              'text-font': ['Noto Sans Regular'],
-            },
-            paint: {
-              'text-color': '#06121a',
-              'text-halo-color': '#f4fffc',
-              'text-halo-width': 1.6,
-            },
-          });
-
           let hoveredId: string | null = null;
           const clearHover = () => {
             if (hoveredId) {
@@ -625,14 +576,25 @@ export function WorldMap({
             popup.setLngLat(event.lngLat).setDOMContent(root).addTo(map);
           });
           map.on('mouseleave', 'country-fill', clearHover);
-          map.on('click', 'country-fill', (event: MapLayerMouseEvent) => {
-            const properties: unknown = event.features?.[0]?.properties;
-            if (typeof properties !== 'object' || properties === null) return;
-            const iso3 = (properties as Record<string, unknown>)['iso3'];
-            if (typeof iso3 !== 'string' || !iso3) return;
-            // Shift-click adds the second side of the comparison.
+
+          // One handler for the whole canvas rather than a layer-scoped one, so
+          // a click on open water is a real event: it clears the selection and
+          // returns the map to the overview.
+          map.on('click', (event: MapLayerMouseEvent) => {
+            const hit = map.queryRenderedFeatures(event.point, { layers: ['country-fill'] });
             const additive = event.originalEvent.shiftKey || event.originalEvent.metaKey;
-            selectRef.current(iso3, additive);
+            const properties: unknown = hit[0]?.properties;
+            const iso3 =
+              typeof properties === 'object' && properties !== null
+                ? (properties as Record<string, unknown>)['iso3']
+                : null;
+            if (typeof iso3 === 'string' && iso3) {
+              selectRef.current(iso3, additive);
+              return;
+            }
+            if (additive) return;
+            popup.remove();
+            selectRef.current(null, false);
           });
 
           const showArc = (event: MapLayerMouseEvent) => {
@@ -709,8 +671,10 @@ export function WorldMap({
       }
     }
     for (const entry of spread) {
-      // Spread: early arrival is green. Active view: more diseases is red.
-      const danger = activeMode ? 1 - entry.arrivalShare : entry.arrivalShare;
+      // Spread: early arrival is green, late arrival red. Active view: a country
+      // reporting an outbreak right now is never green, so the load is mapped
+      // onto the upper half of the ramp and more diseases pushes it to red.
+      const danger = activeMode ? 0.5 + (1 - entry.arrivalShare) * 0.5 : entry.arrivalShare;
       map.setFeatureState(
         { source: 'countries', id: entry.iso3 },
         { affected: true, order: danger },
@@ -779,15 +743,7 @@ export function WorldMap({
     if (!map || !ready) return;
     const pin = map.getSource('pin');
     if (pin instanceof GeoJSONSource) void pin.setData(pointFor(selected));
-    const order = map.getSource('order');
-    if (order instanceof GeoJSONSource) {
-      void order.setData(
-        activeMode
-          ? { type: 'FeatureCollection', features: [] }
-          : markerFeatures(countries, spread, 25),
-      );
-    }
-  }, [ready, countries, spread, selected, activeMode]);
+  }, [ready, selected]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -913,9 +869,9 @@ export function WorldMap({
 
       <div className="hud map__hint">
         {activeMode
-          ? 'Every country with a report in the last 90 days, shaded by how many diseases. Click one for its record.'
+          ? 'Every country with a report in the last 90 days, shaded by how many diseases. Click one for its record, or the sea to clear.'
           : spread.length > 0
-            ? 'Numbers mark the order countries first reported this disease. Click a country for its record, shift-click to compare two.'
+            ? 'Shaded by when each country first reported this disease. Click one for its record, shift-click to compare two. Click the sea to clear.'
             : 'Click any country to see every disease ever reported there. Shift-click a second one to compare.'}
       </div>
     </div>

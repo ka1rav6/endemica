@@ -13,12 +13,15 @@ from epiroute.epidemiology.travel_index import (
     CONNECTIVITY_RATE_FLOOR,
     LARGE_CONFIRMED_CASES,
     NOTE,
+    PROBABILITY_CAP,
+    PROBABILITY_FLOOR,
     WEIGHTS,
     TravelIndexInputs,
     band_for,
     compute_travel_index,
     round_tenths,
     score_connectivity,
+    score_probability,
 )
 
 AS_OF = datetime(2026, 10, 24, tzinfo=UTC)
@@ -116,13 +119,31 @@ class TestPresence:
 
 
 class TestProbabilities:
-    def test_importation_is_ten_times_the_central_probability(self) -> None:
-        result = _index(importation_probability=0.18)
-        assert _component(result, "importation").score == pytest.approx(1.8)
+    def test_probability_is_scored_on_orders_of_magnitude(self) -> None:
+        # Floor 1e-6 and cap 0.1 are five decades apart, so 1e-3.5 is halfway.
+        assert _component(_index(importation_probability=10**-3.5), "importation").score == (
+            pytest.approx(5)
+        )
+        assert (
+            _component(_index(importation_probability=PROBABILITY_FLOOR), "importation").score == 0
+        )
+        assert (
+            _component(_index(importation_probability=PROBABILITY_CAP), "importation").score == 10
+        )
 
-    def test_probability_above_one_is_clamped(self) -> None:
+    def test_probability_above_the_cap_is_clamped(self) -> None:
         result = _index(importation_probability=1.4)
         assert _component(result, "importation").score == 10
+
+    def test_small_probabilities_still_separate_destinations(self) -> None:
+        # The whole point of the log scale: a thousandfold difference in
+        # probability must not collapse onto the same displayed score.
+        scores = [
+            _component(_index(importation_probability=p), "importation").score
+            for p in (1e-5, 1e-4, 1e-3)
+        ]
+        assert scores == sorted(scores)
+        assert len(set(scores)) == 3
 
     def test_a_real_zero_is_kept(self) -> None:
         result = _index(establishment_probability=0.0)
@@ -153,11 +174,11 @@ class TestConnectivity:
         assert score_connectivity(25) == 10
 
     def test_midpoint_of_the_log_span_is_5(self) -> None:
-        # Floor 1e-4 and cap 1 are four decades apart. Two decades up is halfway.
-        assert score_connectivity(1e-2) == pytest.approx(5)
+        # Floor 1e-6 and cap 1 are six decades apart. Three decades up is halfway.
+        assert score_connectivity(1e-3) == pytest.approx(5)
 
     def test_the_scale_rises_with_rate(self) -> None:
-        rates = [0, 1e-4, 1e-3, 1e-2, 0.1, 1, 4]
+        rates = [0, 1e-6, 1e-4, 1e-2, 0.1, 1, 4]
         scores = [score_connectivity(rate) for rate in rates]
         assert scores == sorted(scores)
         assert scores[0] == 0
@@ -178,7 +199,7 @@ class TestConnectivity:
         from_origins = _index(origin_rates=(0.5, 0.5), top_origin_share=0.5)
         assert _component(from_origins, "connectivity").score == 10
         # A listed origin must not override the aggregate, even if it is larger.
-        capped = _index(arrival_rate_per_day=1e-2, origin_rates=(50,), top_origin_share=1)
+        capped = _index(arrival_rate_per_day=1e-3, origin_rates=(50,), top_origin_share=1)
         assert _component(capped, "connectivity").score == pytest.approx(5)
 
     def test_nan_aggregate_falls_through_to_origin_rates(self) -> None:
@@ -190,13 +211,13 @@ class TestCombination:
     def test_nominal_weights_when_every_input_exists(self) -> None:
         result = _index(
             presence_status="not_reported",
-            importation_probability=0.5,
-            establishment_probability=0.2,
-            arrival_rate_per_day=1,
+            importation_probability=10**-3.5,
+            establishment_probability=10**-4.5,
+            arrival_rate_per_day=1e-3,
         )
-        # 0×0.40 + 5×0.30 + 2×0.15 + 10×0.15 = 3.3
-        assert result.score == pytest.approx(3.3)
-        assert result.band == "Moderate"
+        # 0×0.40 + 5×0.30 + 3×0.15 + 5×0.15 = 2.7
+        assert result.score == pytest.approx(2.7)
+        assert result.band == "Low"
         for key, weight in WEIGHTS.items():
             component = _component(result, key)
             assert component.available is True
@@ -234,12 +255,16 @@ class TestCombination:
         assert round_tenths(1.25) == pytest.approx(1.3)
         assert round_tenths(2.94) == pytest.approx(2.9)
         assert round_tenths(2.95) == pytest.approx(3.0)
-        # 10 × 0.023 = 0.23, which displays as 0.2, but the mean uses 0.23.
-        result = _index(establishment_probability=0.023, importation_probability=0.18)
-        assert _component(result, "establishment").score == pytest.approx(0.2)
-        assert _component(result, "importation").score == pytest.approx(1.8)
-        # (1.8 raw is 1.8 exactly; 0.23 × 0.15 + 1.8 × 0.30) / 0.45
-        raw = (0.18 * 10 * 0.30 + 0.023 * 10 * 0.15) / 0.45
+        # The mean is taken on the unrounded component scores, then rounded once.
+        result = _index(establishment_probability=0.023, importation_probability=0.0018)
+        establishment = score_probability(0.023)
+        importation = score_probability(0.0018)
+        assert establishment is not None
+        assert importation is not None
+        assert _component(result, "establishment").score == pytest.approx(
+            round_tenths(establishment)
+        )
+        raw = (importation * 0.30 + establishment * 0.15) / 0.45
         assert result.score == pytest.approx(round_tenths(raw))
 
     @pytest.mark.parametrize(

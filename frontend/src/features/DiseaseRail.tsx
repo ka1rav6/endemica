@@ -2,16 +2,12 @@ import { useMemo, useState } from 'react';
 import type { DiseaseHistory } from '@/types/api';
 import { formatCount } from '@/lib/format';
 
-type Scope = 'all' | 'active' | 'major';
+type Scope = 'all' | 'major' | 'recent';
 
 const SCOPES: { id: Scope; label: string; title: string }[] = [
-  { id: 'all', label: 'All', title: 'Every disease in the archive' },
-  {
-    id: 'active',
-    label: 'Active',
-    title: 'Combine every currently reported disease into one view',
-  },
+  { id: 'all', label: 'A–Z', title: 'Every disease in the archive' },
   { id: 'major', label: 'Widest', title: 'Reached the most countries' },
+  { id: 'recent', label: 'Newest', title: 'Most recently reported first' },
 ];
 
 interface Props {
@@ -87,14 +83,16 @@ export function DiseaseRail({
           disease.source_labels.some((label) => label.toLowerCase().includes(needle)),
       );
     }
-    if (scope === 'active' || activeMode) {
-      list = list.filter((disease) => activeKeys.has(disease.disease_key));
-    }
     if (scope === 'major') {
       list = [...list].sort((a, b) => b.country_count - a.country_count);
     }
+    if (scope === 'recent') {
+      list = [...list].sort((a, b) =>
+        (b.last_published_at ?? '').localeCompare(a.last_published_at ?? ''),
+      );
+    }
     return list;
-  }, [diseases, query, scope, activeMode, activeKeys]);
+  }, [diseases, query, scope]);
 
   return (
     <aside className="rail" aria-label="Diseases">
@@ -125,22 +123,39 @@ export function DiseaseRail({
         </label>
       </div>
 
-      <div className="rail__filters" role="group" aria-label="Filter diseases">
+      <button
+        type="button"
+        className={activeMode ? 'railmode railmode--on' : 'railmode'}
+        aria-pressed={activeMode}
+        onClick={() => {
+          onActiveMode(!activeMode);
+        }}
+      >
+        <span className="railmode__top">
+          <span
+            className={activeMode ? 'dot dot--pulse' : 'dot'}
+            style={{ color: activeMode ? 'var(--hot)' : 'var(--ink-4)' }}
+            aria-hidden="true"
+          />
+          <span className="railmode__title">Everything active now</span>
+          <span className="railmode__count num">{activeKeys.size}</span>
+        </span>
+        <span className="railmode__note">
+          {activeMode
+            ? `On — the map and every estimate combine all ${activeKeys.size} disease${activeKeys.size === 1 ? '' : 's'} reported in the last ${activeWindowDays} days. Pick one below to narrow it.`
+            : `Combine every disease reported in the last ${activeWindowDays} days into one picture.`}
+        </span>
+      </button>
+
+      <div className="rail__filters" role="group" aria-label="Sort diseases">
         {SCOPES.map((entry) => (
           <button
             key={entry.id}
             type="button"
             className="segment"
-            aria-pressed={entry.id === 'active' ? activeMode : scope === entry.id && !activeMode}
+            aria-pressed={scope === entry.id}
             title={entry.title}
             onClick={() => {
-              if (entry.id === 'active') {
-                const next = !activeMode;
-                onActiveMode(next);
-                setScope(next ? 'active' : 'all');
-                return;
-              }
-              onActiveMode(false);
               setScope(entry.id);
             }}
           >
@@ -149,20 +164,6 @@ export function DiseaseRail({
         ))}
       </div>
 
-      {activeMode && (
-        <div className="rail__mode">
-          <span className="rail__mode-title">
-            <span className="dot dot--pulse" style={{ color: 'var(--hot)' }} aria-hidden="true" />
-            All active diseases
-          </span>
-          <span className="rail__mode-note">
-            The map and every estimate cover {activeKeys.size} disease
-            {activeKeys.size === 1 ? '' : 's'} reported in the last {activeWindowDays} days at
-            once. Pick one below to narrow it.
-          </span>
-        </div>
-      )}
-
       <div className="rail__list">
         {visible.length === 0 && (
           <p className="rail__empty">
@@ -170,12 +171,12 @@ export function DiseaseRail({
           </p>
         )}
         {visible.map((disease) => {
-          const live = isActive(disease, activeWindowDays);
+          const live = activeKeys.has(disease.disease_key) || isActive(disease, activeWindowDays);
           return (
             <button
               key={disease.disease_key}
               type="button"
-              className="dcard"
+              className={live ? 'dcard dcard--live' : 'dcard'}
               aria-current={!activeMode && disease.disease_key === selectedKey}
               onClick={() => {
                 onSelect(disease.disease_key);

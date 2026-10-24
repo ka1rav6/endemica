@@ -1,13 +1,10 @@
 import { useMemo, useState } from 'react';
-import type { Country, DiseaseHistory, HealthResponse } from '@/types/api';
+import type { Country, HealthResponse } from '@/types/api';
 
 interface Props {
   countries: Country[];
   selectedIso3: string | null;
   onSelect: (iso3: string) => void;
-  diseases: DiseaseHistory[];
-  selectedDiseaseKey: string | null;
-  onSelectDisease: (key: string | null) => void;
   health: HealthResponse | null;
   showFlows: boolean;
   onToggleFlows: () => void;
@@ -19,9 +16,6 @@ export function TopBar({
   countries,
   selectedIso3,
   onSelect,
-  diseases,
-  selectedDiseaseKey,
-  onSelectDisease,
   health,
   showFlows,
   onToggleFlows,
@@ -48,35 +42,22 @@ export function TopBar({
 
   return (
     <header className="head">
-      <div className="brand">
+      <button
+        type="button"
+        className="brand"
+        title="Reload Endemica"
+        onClick={() => {
+          window.location.reload();
+        }}
+      >
         <span className="brand__mark" aria-hidden="true">
           E
         </span>
         <span className="brand__name">Endemica</span>
         <span className="brand__tag">Outbreak atlas</span>
-      </div>
+      </button>
 
       <div className="head__group">
-        <label className="visually-hidden" htmlFor="disease-select">
-          Disease
-        </label>
-        <select
-          id="disease-select"
-          className="select"
-          value={selectedDiseaseKey ?? ''}
-          onChange={(event) => {
-            onSelectDisease(event.target.value || null);
-          }}
-          style={{ maxWidth: 260 }}
-        >
-          <option value="">All diseases</option>
-          {diseases.map((disease) => (
-            <option key={disease.disease_key} value={disease.disease_key}>
-              {disease.disease_name} · {disease.country_count} countries
-            </option>
-          ))}
-        </select>
-
         <div style={{ position: 'relative' }}>
           <label className="field" style={{ width: 188 }}>
             <span className="field__icon" aria-hidden="true">

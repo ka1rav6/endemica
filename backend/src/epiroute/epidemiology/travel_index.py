@@ -23,13 +23,22 @@ The case figure is the one already attached to local presence: the highest
 grounded confirmed count among the reports that answer "is it already here?"
 A report exactly 90 days old still counts as recent. Older than 90 days does not.
 
-Importation: ``10 ×`` the central probability of at least one infectious
-arrival within the horizon. Omitted when that probability is not estimable.
-A computed zero stays in.
+Importation: the central probability of at least one infectious arrival within
+the horizon, scored on orders of magnitude. Over a two-week horizon these
+probabilities span roughly ``1e-6`` to ``1e-1`` across destinations, so a
+linear ``10 ×`` map puts almost every country at 0.0 and the index stops
+telling them apart. ``log10(p)`` is mapped onto 0-10 instead:
 
-Establishment: ``10 ×`` the central probability that spread takes off within
-the horizon, and only when that probability is estimable. A computed zero
-(for example R at or below 1) stays in. "Not estimable" is omitted.
+* ``p`` at or below ``1e-6`` → 0
+* ``p`` at or above ``0.1`` → 10
+* otherwise linear in ``log10(p)`` between those two
+
+Omitted when the probability is not estimable. A computed zero stays in as 0.
+
+Establishment: the central probability that spread takes off within the
+horizon, on the same log scale, and only when that probability is estimable.
+A computed zero (for example R at or below 1) stays in. "Not estimable" is
+omitted.
 
 Connectivity: the gravity/passenger term, scored from the modelled infectious
 arrival rate (infected arrivals per day), which already includes passenger
@@ -37,9 +46,9 @@ volume. ``log10(rate)`` is mapped onto 0–10:
 
 * no rate → omitted (a top-origin share without a rate is not turned into one)
 * rate ≤ 0 → 0
-* rate at or below ``1e-4`` per day → 0
+* rate at or below ``1e-6`` per day → 0
 * rate ≥ 1 per day → 10
-* otherwise linear in ``log10(rate)`` between ``1e-4`` and 1
+* otherwise linear in ``log10(rate)`` between ``1e-6`` and 1
 
 When the aggregate rate is missing but origin-level rates were still returned,
 those origin rates are summed and used. They are not used when an aggregate
@@ -71,10 +80,16 @@ PRESENCE_STALE = 4.0
 PRESENCE_RECENT = 7.0
 PRESENCE_RECENT_LARGE = 9.0
 
-# One modelled infectious arrival every 10,000 days sits at 0. One per day
-# saturates the connectivity term. The scale is linear in log10(rate).
-CONNECTIVITY_RATE_FLOOR = 1e-4
+# One modelled infectious arrival every million days sits at 0. One per day
+# saturates the connectivity term. The scale is linear in log10(rate). The
+# floor is well below the rates real destinations produce, because anything
+# higher flattens most of the world onto 0 and hides the differences.
+CONNECTIVITY_RATE_FLOOR = 1e-6
 CONNECTIVITY_RATE_CAP = 1.0
+
+# Probabilities are scored the same way, for the same reason.
+PROBABILITY_FLOOR = 1e-6
+PROBABILITY_CAP = 0.1
 
 BandLabel = Literal["Low", "Moderate", "High", "Very high"]
 ComponentKey = Literal["presence", "importation", "establishment", "connectivity"]
@@ -182,12 +197,28 @@ def score_presence(
     return PRESENCE_RECENT
 
 
+def _log_scale(value: float, floor: float, cap: float) -> float:
+    """Map ``value`` onto 0-10, linear in log10 between ``floor`` and ``cap``."""
+    if value <= floor:
+        return 0.0
+    if value >= cap:
+        return 10.0
+    log_floor = math.log10(floor)
+    log_cap = math.log10(cap)
+    return 10.0 * (math.log10(value) - log_floor) / (log_cap - log_floor)
+
+
 def score_probability(probability: float | None) -> float | None:
-    """Map a central probability in 0–1 onto 0–10. Missing stays missing."""
+    """Map a central probability onto 0-10 by orders of magnitude.
+
+    Missing stays missing. A computed zero is a real 0, not a missing value.
+    """
     value = _finite(probability)
     if value is None:
         return None
-    return min(10.0, max(0.0, 10.0 * value))
+    if value <= 0:
+        return 0.0
+    return _log_scale(value, PROBABILITY_FLOOR, PROBABILITY_CAP)
 
 
 def resolve_arrival_rate(
@@ -217,13 +248,7 @@ def score_connectivity(rate: float) -> float:
     """Map ``log10(arrival rate per day)`` onto 0–10. ``rate`` must be a real number."""
     if rate <= 0:
         return 0.0
-    if rate <= CONNECTIVITY_RATE_FLOOR:
-        return 0.0
-    if rate >= CONNECTIVITY_RATE_CAP:
-        return 10.0
-    log_floor = math.log10(CONNECTIVITY_RATE_FLOOR)
-    log_cap = math.log10(CONNECTIVITY_RATE_CAP)
-    return 10.0 * (math.log10(rate) - log_floor) / (log_cap - log_floor)
+    return _log_scale(rate, CONNECTIVITY_RATE_FLOOR, CONNECTIVITY_RATE_CAP)
 
 
 def compute_travel_index(inputs: TravelIndexInputs) -> TravelIndexResult:

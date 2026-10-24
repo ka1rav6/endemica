@@ -213,6 +213,15 @@ a:hover {
   gap: 9px;
   padding-right: 6px;
   flex-shrink: 0;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  border-radius: var(--r-sm);
+  transition: opacity 120ms ease;
+}
+
+.brand:hover {
+  opacity: 0.78;
 }
 
 .brand__mark {
@@ -1950,29 +1959,79 @@ button.row[aria-current='true'] {
   color: var(--ink-4);
 }
 
-.rail__mode {
+.railmode {
   display: grid;
-  gap: 3px;
-  margin: 8px 8px 0;
+  gap: 4px;
+  width: calc(100% - 24px);
+  margin: 0 12px 9px;
   padding: 9px 10px;
+  text-align: left;
   border-radius: var(--r-sm);
-  background: rgb(255 107 122 / 9%);
-  border: 1px solid rgb(255 107 122 / 24%);
+  background: var(--surface-2);
+  border: 1px solid var(--line-2);
+  transition:
+    background 140ms ease,
+    border-color 140ms ease;
 }
 
-.rail__mode-title {
+.railmode:hover {
+  background: var(--surface-3);
+  border-color: var(--line-3, var(--line-2));
+}
+
+.railmode--on {
+  background: rgb(255 107 122 / 10%);
+  border-color: rgb(255 107 122 / 32%);
+}
+
+.railmode--on:hover {
+  background: rgb(255 107 122 / 14%);
+  border-color: rgb(255 107 122 / 42%);
+}
+
+.railmode__top {
   display: flex;
   align-items: center;
   gap: 7px;
+}
+
+.railmode__title {
+  flex: 1;
   font-size: 11.5px;
   font-weight: 650;
+  color: var(--ink-2);
+}
+
+.railmode--on .railmode__title {
   color: #ff97a2;
 }
 
-.rail__mode-note {
+.railmode__count {
   font-size: 10.5px;
-  line-height: 1.4;
+  font-weight: 650;
   color: var(--ink-3);
+  background: var(--surface-3);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+
+.railmode--on .railmode__count {
+  color: #ff97a2;
+  background: rgb(255 107 122 / 16%);
+}
+
+.railmode__note {
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--ink-4);
+}
+
+.railmode--on .railmode__note {
+  color: var(--ink-3);
+}
+
+.dcard--live .dcard__name {
+  color: var(--ink);
 }
 
 /* --------------------------------------------------------------- sidebars */

@@ -123,6 +123,12 @@ async function renderOnRiskTab() {
   });
 }
 
+/** Leave the combined active view, which is where the app lands. */
+async function leaveActiveMode() {
+  const toggle = await waitFor(() => screen.getByRole('button', { name: /Everything active now/ }));
+  if (toggle.getAttribute('aria-pressed') === 'true') await userEvent.click(toggle);
+}
+
 describe('App', () => {
   beforeEach(() => {
     risk.current = fixtures.riskResponse();
@@ -386,6 +392,7 @@ describe('Disease history and the country record', () => {
 
   it('shows which countries a disease reached, in arrival order', async () => {
     render(<App />);
+    await leaveActiveMode();
     await waitFor(() => {
       expect(screen.getByRole('tab', { name: 'Spread' })).toBeInTheDocument();
     });
@@ -404,6 +411,7 @@ describe('Disease history and the country record', () => {
 
   it('reports a year-by-year spread, including newly reached countries', async () => {
     render(<App />);
+    await leaveActiveMode();
     await waitFor(() => {
       expect(screen.getByRole('tab', { name: 'Spread' })).toBeInTheDocument();
     });
@@ -418,6 +426,7 @@ describe('Disease history and the country record', () => {
 
   it('plays the spread back and limits the map to the chosen year', async () => {
     render(<App />);
+    await leaveActiveMode();
     await waitFor(() => {
       expect(screen.getByLabelText('Year')).toBeInTheDocument();
     });
@@ -457,29 +466,23 @@ describe('The all-active view', () => {
     sessionStorage.clear();
   });
 
-  it('combines every active disease into one view when Active is pressed', async () => {
+  it('lands on the combined active view and asks the model for it', async () => {
     const { getRisk } = await import('@/services/epiroute');
     render(<App />);
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Active' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Everything active now/ })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
     });
-    await userEvent.click(screen.getByRole('button', { name: 'Active' }));
     await waitFor(() => {
-      expect(screen.getByText('All active diseases')).toBeInTheDocument();
-    });
-    await waitFor(() => {
-      const calls = vi.mocked(getRisk).mock.calls;
-      const last = calls.at(-1);
+      const last = vi.mocked(getRisk).mock.calls.at(-1);
       expect(last?.[1]).toMatchObject({ scope: 'active' });
     });
   });
 
   it('says how many diseases and over what window the view covers', async () => {
     render(<App />);
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Active' })).toBeInTheDocument();
-    });
-    await userEvent.click(screen.getByRole('button', { name: 'Active' }));
     await waitFor(() => {
       expect(screen.getByText(/1 disease reported in the last 90 days/)).toBeInTheDocument();
     });
@@ -488,23 +491,28 @@ describe('The all-active view', () => {
   it('returns to a single disease when one is picked', async () => {
     const { getRisk } = await import('@/services/epiroute');
     render(<App />);
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Active' })).toBeInTheDocument();
-    });
-    await userEvent.click(screen.getByRole('button', { name: 'Active' }));
-    await waitFor(() => {
-      expect(screen.getByText('All active diseases')).toBeInTheDocument();
-    });
-
-    const rail = screen.getByRole('complementary', { name: 'Diseases' });
+    const rail = await waitFor(() => screen.getByRole('complementary', { name: 'Diseases' }));
     await userEvent.click(within(rail).getByText('Test respiratory disease'));
     await waitFor(() => {
-      expect(screen.queryByText('All active diseases')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Everything active now/ })).toHaveAttribute(
+        'aria-pressed',
+        'false',
+      );
     });
     await waitFor(() => {
       const last = vi.mocked(getRisk).mock.calls.at(-1);
       expect(last?.[1]).toMatchObject({ disease_key: 'test_resp' });
       expect(last?.[1]).not.toMatchObject({ scope: 'active' });
+    });
+  });
+
+  it('switches back to the combined view when the toggle is pressed again', async () => {
+    render(<App />);
+    await leaveActiveMode();
+    const toggle = screen.getByRole('button', { name: /Everything active now/ });
+    await userEvent.click(toggle);
+    await waitFor(() => {
+      expect(toggle).toHaveAttribute('aria-pressed', 'true');
     });
   });
 });
