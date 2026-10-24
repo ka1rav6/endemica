@@ -404,3 +404,61 @@ def is_known_iso3(code: str) -> bool:
     """Whether ``code`` is an alpha-3 EpiRoute recognises."""
     upper = code.upper()
     return upper in EXTRA_CODES or pycountry.countries.get(alpha_3=upper) is not None
+
+
+@functools.lru_cache(maxsize=1)
+def _name_index() -> tuple[tuple[str, str], ...]:
+    entries: dict[str, str] = {}
+
+    def add(name: object, iso3: str) -> None:
+        if not isinstance(name, str) or not name:
+            return
+        key = _normalise_keeping_qualifiers(name)
+        if len(key) >= 4:
+            entries.setdefault(key, iso3)
+
+    for record in pycountry.countries:
+        iso3 = str(record.alpha_3)
+        add(record.name, iso3)
+        add(getattr(record, "common_name", None), iso3)
+        add(getattr(record, "official_name", None), iso3)
+    for alias, alias_iso3 in ALIASES.items():
+        if alias_iso3 is not None:
+            add(alias, alias_iso3)
+
+    return tuple(sorted(entries.items(), key=lambda pair: len(pair[0]), reverse=True))
+
+
+def find_countries_with_positions(text: str) -> list[tuple[str, int, int]]:
+    if not text:
+        return []
+    haystack = f" {_normalise_keeping_qualifiers(text)} "
+    found: list[tuple[str, int, int]] = []
+    consumed: list[tuple[int, int]] = []
+    seen: set[str] = set()
+
+    for name, iso3 in _name_index():
+        if iso3 in seen:
+            continue
+        needle = f" {name} "
+        start = haystack.find(needle)
+        while start != -1:
+            inner_start, inner_end = start + 1, start + len(needle) - 1
+            if not any(s < inner_end and inner_start < e for s, e in consumed):
+                consumed.append((inner_start, inner_end))
+                found.append((iso3, inner_start - 1, inner_end - 1))
+                seen.add(iso3)
+                break
+            start = haystack.find(needle, start + 1)
+
+    found.sort(key=lambda entry: entry[1])
+    return found
+
+
+def find_countries(text: str) -> list[str]:
+    return [iso3 for iso3, _, _ in find_countries_with_positions(text)]
+
+
+def first_country(text: str) -> str | None:
+    countries = find_countries(text)
+    return countries[0] if countries else None

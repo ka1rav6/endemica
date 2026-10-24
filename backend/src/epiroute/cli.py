@@ -322,6 +322,40 @@ def cmd_data_validate(_args: argparse.Namespace) -> int:
     return 0 if report.ok else 1
 
 
+def cmd_ingest(args: argparse.Namespace) -> int:
+    from epiroute.db.session import session_scope
+    from epiroute.ingestion.pipeline import run_ingestion
+
+    settings = get_settings()
+    _print_header("Ingesting WHO Disease Outbreak News")
+    print(f"  tinyfish: {'enabled' if settings.tinyfish_enabled else 'not configured'}")
+    print(f"  agent:    {'enabled' if not args.no_agent else 'disabled'}")
+    with session_scope() as session:
+        summary = run_ingestion(
+            session, limit=args.limit, use_agent=not args.no_agent, trigger=args.trigger
+        )
+    print(f"\n  run id:               {summary.run_id}")
+    print(f"  mode:                 {summary.mode}")
+    print(f"  status:               {summary.status}")
+    print(f"  records seen:         {summary.records_seen}")
+    print(f"  records created:      {summary.records_created}")
+    print(f"  records updated:      {summary.records_updated}")
+    print(f"  records skipped:      {summary.records_skipped}")
+    print(f"  observations stored:  {summary.observations_created}")
+    print(f"  of which unverified:  {summary.observations_unverified}")
+    if summary.warnings:
+        codes: dict[str, int] = {}
+        for warning in summary.warnings:
+            code = str(warning.get("code"))
+            codes[code] = codes.get(code, 0) + 1
+        _print_header("Validation warnings (rejected values)")
+        for code, count in sorted(codes.items(), key=lambda kv: -kv[1]):
+            print(f"  {count:>5}  {code}")
+    for error in summary.errors:
+        print(f"  {BAD} {error}", file=sys.stderr)
+    return 0 if summary.status == "succeeded" else 1
+
+
 def cmd_openapi(args: argparse.Namespace) -> int:
     """Write the OpenAPI schema to a file."""
     import pathlib
@@ -388,6 +422,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = subparsers.add_parser("model-report", help="Print the stored gravity-model report.")
     p.set_defaults(func=cmd_model_report)
+
+    p = subparsers.add_parser("ingest", help="Run a WHO Disease Outbreak News ingestion pass.")
+    p.add_argument("--limit", type=int, default=None, help="Maximum records to ingest.")
+    p.add_argument("--no-agent", action="store_true", help="Skip TinyFish Agent extraction.")
+    p.add_argument("--trigger", default="manual", choices=["manual", "webhook", "scheduled"])
+    p.set_defaults(func=cmd_ingest)
 
     p = subparsers.add_parser("openapi", help="Write the OpenAPI schema to a file.")
     p.add_argument("--output", required=True, help="Destination path.")

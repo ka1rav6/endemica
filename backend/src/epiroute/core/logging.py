@@ -35,6 +35,8 @@ _RESERVED = frozenset(logging.LogRecord("", 0, "", 0, "", None, None).__dict__) 
     "taskName",
 }
 
+RESERVED_LOG_FIELDS = _RESERVED
+
 
 def _redact(text: str) -> str:
     """Replace anything that looks like a credential assignment with a marker."""
@@ -108,5 +110,6 @@ def configure_logging(level: str = "INFO", *, json_output: bool | None = None) -
     for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
         logging.getLogger(name).propagate = False
 
-    # SQLAlchemy's engine logger is extremely verbose at INFO.
     logging.getLogger("sqlalchemy.engine").setLevel("WARNING")
+    logging.getLogger("httpx").setLevel("WARNING")
+    logging.getLogger("httpcore").setLevel("WARNING")
