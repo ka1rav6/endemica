@@ -181,47 +181,25 @@ def _origin_prevalence(
         return prev.PrevalenceUnavailable("no_pathogen", "no pathogen profile selected")
 
     series = outbreak_repo.cumulative_series(session, origin_iso3, profile.key)
-    band = (query.underreporting_low, query.underreporting_central, query.underreporting_high)
-    now = utc_now()
-
-    with_cases = [p for p in series if p.cases_confirmed is not None]
-    if len(with_cases) >= 2:
-        earlier, later = with_cases[-2], with_cases[-1]
-        assert earlier.cases_confirmed is not None
-        assert later.cases_confirmed is not None
-        outcome = prev.estimate_from_incidence(
-            earlier.cases_confirmed,
-            earlier.published_at,
-            later.cases_confirmed,
-            later.published_at,
-            population=population,
-            infectious_period_days=profile.infectious_period_days,
-            underreporting=band,
-            as_of=now,
+    points = [
+        prev.ReportedCount(
+            published_at=point.published_at,
+            cases_confirmed=point.cases_confirmed,
+            outbreak_started_on=point.outbreak_started_on,
         )
-        if isinstance(outcome, prev.PrevalenceEstimate):
-            return outcome
-
-    if with_cases:
-        latest = with_cases[-1]
-        assert latest.cases_confirmed is not None
-        age = (
-            (latest.published_at - with_cases[0].published_at).total_seconds() / 86400.0
-            if len(with_cases) > 1
-            else None
-        )
-        return prev.estimate_from_single_report(
-            latest.cases_confirmed,
-            latest.published_at,
-            population=population,
-            infectious_period_days=profile.infectious_period_days,
-            outbreak_age_days=age,
-            underreporting=band,
-            as_of=now,
-        )
-
-    return prev.PrevalenceUnavailable(
-        "no_reported_cases", "no grounded case count is available for this origin"
+        for point in series
+        if point.cases_confirmed is not None
+    ]
+    return prev.prevalence_from_series(
+        points,
+        population=population,
+        infectious_period_days=profile.infectious_period_days,
+        underreporting=(
+            query.underreporting_low,
+            query.underreporting_central,
+            query.underreporting_high,
+        ),
+        as_of=utc_now(),
     )
 
 

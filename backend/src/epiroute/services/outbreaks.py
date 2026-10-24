@@ -28,6 +28,25 @@ from epiroute.schemas.outbreak import (
 )
 
 
+def _usable_for_models(observation: OutbreakObservation) -> bool:
+    """Whether this row's stored counts may enter a risk calculation.
+
+    Matches the repository filter: verified and partial rows whose failing
+    fields were already dropped, and never an unverified row.
+    """
+    if observation.grounding_status not in (ExtractionStatus.VERIFIED, ExtractionStatus.PARTIAL):
+        return False
+    return any(
+        value is not None
+        for value in (
+            observation.cases_confirmed,
+            observation.cases_probable,
+            observation.cases_suspected,
+            observation.deaths,
+        )
+    )
+
+
 def _observation_out(observation: OutbreakObservation) -> ObservationOut:
     return ObservationOut(
         id=str(observation.id),
@@ -45,7 +64,7 @@ def _observation_out(observation: OutbreakObservation) -> ObservationOut:
         evidence_text=observation.evidence_text,
         grounding_status=observation.grounding_status,
         value_type=observation.value_type,
-        usable_for_models=observation.grounding_status is ExtractionStatus.VERIFIED,
+        usable_for_models=_usable_for_models(observation),
     )
 
 

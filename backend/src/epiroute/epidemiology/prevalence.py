@@ -29,18 +29,19 @@ under-reporting multiplier. This is the preferred path because it uses only
 the *change* in reporting, which is far less sensitive to how complete the
 cumulative total is.
 
-*2. Recent-window fallback* — used when only one report exists. The stated
-cumulative count is multiplied by the fraction of it assumed still infectious:
+*2. Recent-window fallback* — used when only one report exists **and** that
+report states when the outbreak began. The cumulative count is multiplied by
+the fraction of it that would still be infectious if cases had accumulated
+evenly:
 
 .. math::
 
     I \approx C \times \min\!\left(1, \frac{D}{A}\right) \times u
 
-where :math:`A` is the outbreak's apparent age in days (report date minus the
-earliest reporting date, floored at :math:`D`). The term
-:math:`\min(1, D/A)` is a crude assumption that cases accumulated uniformly
-over the outbreak's life; it is labelled as such and the resulting estimate
-carries a warning.
+where :math:`A` is the number of days from the stated start to the report
+date, floored at :math:`D`. A single cumulative total with no start date is
+not an estimate of who is infectious today, so the function returns "not
+estimable" rather than treating every historical case as still infectious.
 
 **Staleness.** A report older than ``max_report_age_days`` yields
 :class:`PrevalenceUnavailable`, not a decayed number. An outbreak that stopped
@@ -68,8 +69,9 @@ Symbol           Meaning and unit
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from enum import StrEnum
 
 from epiroute.core.errors import ModelInputError
@@ -148,6 +150,23 @@ class PrevalenceUnavailable:
 
 
 PrevalenceOutcome = PrevalenceEstimate | PrevalenceUnavailable
+
+
+@dataclass(frozen=True, slots=True)
+class ReportedCount:
+    """One grounded cumulative case count at a publication time.
+
+    Attributes:
+        published_at: When the report carrying this count was published.
+        cases_confirmed: Cumulative confirmed cases. Only a count that survived
+            grounding belongs here.
+        outbreak_started_on: The day the source says the outbreak was declared
+            or began. ``None`` when the text does not say.
+    """
+
+    published_at: datetime
+    cases_confirmed: int
+    outbreak_started_on: date | None = None
 
 
 def _validate_underreporting(band: tuple[float, float, float]) -> None:
@@ -347,18 +366,18 @@ def estimate_from_single_report(
 
     Applies :math:`I = C \times \min(1, D/A) \times u`. The
     :math:`\min(1, D/A)` factor assumes cases accumulated uniformly over the
-    outbreak's apparent age :math:`A`; when the age is unknown it defaults to
-    the infectious period, which makes the factor 1 and treats every reported
-    case as currently infectious. That is the most pessimistic reading and is
-    flagged as such.
+    outbreak's age :math:`A`. When the start date is unknown the function
+    declines: a cumulative total alone does not say how many people are
+    infectious today.
 
     Args:
         cumulative_cases: Cumulative reported cases C, non-negative.
         report_date: Publication time of the report.
         population: Origin population N, positive.
         infectious_period_days: Mean infectious period D, positive.
-        outbreak_age_days: Apparent outbreak age A in days. ``None`` means
-            unknown.
+        outbreak_age_days: Outbreak age A in days, from the stated start to the
+            report date. ``None`` means the start is unknown, and no estimate
+            is returned.
         underreporting: (low, central, high) multipliers, each >= 1.
         as_of: The time the estimate is being made.
         max_report_age_days: Reports older than this are not used.
@@ -407,21 +426,28 @@ def estimate_from_single_report(
         )
 
     if outbreak_age_days is None:
-        active_fraction = 1.0
-        age_caveat = (
-            "The outbreak's start date is unknown, so every reported case is treated as "
-            "currently infectious. This is the most pessimistic reading available."
+        return PrevalenceUnavailable(
+            reason="outbreak_age_unknown",
+            detail=(
+                "This origin has one cumulative case count and the report does not say "
+                "when the outbreak began. Current prevalence is not estimated from that "
+                "total, because doing so would treat every historical case as still "
+                "infectious."
+            ),
         )
-    else:
-        # Floor the age at the infectious period: an outbreak younger than one
-        # infectious period cannot have had cases recover, so the fraction is 1.
-        effective_age = max(outbreak_age_days, infectious_period_days)
-        active_fraction = min(1.0, infectious_period_days / effective_age)
-        age_caveat = (
-            f"Assumes cases accumulated uniformly over the outbreak's {effective_age:.0f}-day "
-            f"apparent age, so {active_fraction:.0%} of reported cases are treated as "
-            f"currently infectious."
-        )
+    if not math.isfinite(outbreak_age_days) or outbreak_age_days < 0:
+        msg = f"outbreak_age_days must be finite and non-negative, got {outbreak_age_days!r}"
+        raise ModelInputError(msg)
+
+    # Floor the age at the infectious period: an outbreak younger than one
+    # infectious period cannot have had cases recover, so the fraction is 1.
+    effective_age = max(outbreak_age_days, infectious_period_days)
+    active_fraction = min(1.0, infectious_period_days / effective_age)
+    age_caveat = (
+        f"Assumes cases accumulated uniformly over the outbreak's {effective_age:.0f}-day "
+        f"apparent age, so {active_fraction:.0%} of reported cases are treated as "
+        f"currently infectious."
+    )
 
     base_infectious = cumulative_cases * active_fraction
     caveats = (
@@ -443,3 +469,85 @@ def estimate_from_single_report(
         reference_date=report_date,
         caveats=caveats,
     )
+
+
+def prevalence_from_series(
+    points: Sequence[ReportedCount],
+    *,
+    population: int,
+    infectious_period_days: float,
+    underreporting: tuple[float, float, float] = DEFAULT_UNDERREPORTING,
+    as_of: datetime,
+    max_report_age_days: float = DEFAULT_MAX_REPORT_AGE_DAYS,
+) -> PrevalenceOutcome:
+    """Estimate current prevalence from a time-ordered series of cumulative counts.
+
+    Uses incidence differencing on the latest pair of reports separated in
+    time. That result stands, including a refusal: a flat or revised-down
+    series is evidence about current transmission, and the single-report
+    formula must not replace it by treating the old cumulative total as still
+    infectious. The single-report formula runs only for one count whose report
+    states when the outbreak began. A cumulative total with no start date is
+    refused.
+
+    Args:
+        points: Grounded cumulative counts. Order does not matter.
+        population: Origin population N, positive.
+        infectious_period_days: Mean infectious period D, positive.
+        underreporting: (low, central, high) multipliers, each >= 1.
+        as_of: The time the estimate is being made.
+        max_report_age_days: Reports older than this are not used.
+
+    Returns:
+        A prevalence estimate, or an explicit refusal.
+    """
+    if not points:
+        return PrevalenceUnavailable(
+            reason="no_reported_cases",
+            detail="no grounded case count is available for this origin",
+        )
+
+    ordered = sorted(points, key=lambda point: point.published_at)
+    later = ordered[-1]
+    earlier = next(
+        (
+            candidate
+            for candidate in reversed(ordered[:-1])
+            if (later.published_at - candidate.published_at).total_seconds() > 0
+        ),
+        None,
+    )
+    if earlier is not None:
+        return estimate_from_incidence(
+            earlier.cases_confirmed,
+            earlier.published_at,
+            later.cases_confirmed,
+            later.published_at,
+            population=population,
+            infectious_period_days=infectious_period_days,
+            underreporting=underreporting,
+            as_of=as_of,
+            max_report_age_days=max_report_age_days,
+        )
+
+    age = _age_from_start(later.published_at, later.outbreak_started_on)
+    return estimate_from_single_report(
+        later.cases_confirmed,
+        later.published_at,
+        population=population,
+        infectious_period_days=infectious_period_days,
+        outbreak_age_days=age,
+        underreporting=underreporting,
+        as_of=as_of,
+        max_report_age_days=max_report_age_days,
+    )
+
+
+def _age_from_start(published_at: datetime, started_on: date | None) -> float | None:
+    """Days from a stated outbreak start to the report date, or None."""
+    if started_on is None:
+        return None
+    age = (published_at.date() - started_on).days
+    if age < 0:
+        return None
+    return float(age)

@@ -281,7 +281,9 @@ class OutbreakObservation(Base, TimestampMixin):
 
     Every count is nullable because reports routinely state some and omit
     others. ``grounding_status`` records whether the numbers were found
-    verbatim in the retrieved text; only ``verified`` rows may feed a model.
+    verbatim in the retrieved text. A stored count on a ``verified`` or
+    ``partial`` row passed that check; failing fields are stored as null and
+    do not feed a model. An ``unverified`` row feeds nothing.
     """
 
     __tablename__ = "outbreak_observations"

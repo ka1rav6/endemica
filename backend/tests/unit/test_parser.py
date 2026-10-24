@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 
 import pytest
@@ -7,6 +8,7 @@ import pytest
 from epiroute.ingestion.grounding import ground_record
 from epiroute.ingestion.parser import (
     find_country_in_sentence,
+    find_outbreak_start,
     parse_report,
     parse_sentence,
     split_sentences,
@@ -38,6 +40,11 @@ class TestFieldExtraction:
             ("Reports describe 5 deaths.", "deaths", 5),
             ("Reports describe 5 associated deaths.", "deaths", 5),
             ("A cumulative total of 300 confirmed cases.", "cases_confirmed", 300),
+            (
+                "Cumulative confirmed cases have reached 9704, including 4687 deaths.",
+                "cases_confirmed",
+                9704,
+            ),
         ],
     )
     def test_patterns_match(self, sentence: str, field: str, value: int) -> None:
@@ -66,6 +73,27 @@ class TestFieldExtraction:
 
     def test_sentence_without_numbers_yields_nothing(self) -> None:
         assert parse_sentence("The outbreak continues to expand.") is None
+
+    def test_a_recovery_count_does_not_hide_the_cumulative_total(self) -> None:
+        """WHO puts the national total and the recovery count in one sentence."""
+        parsed = parse_sentence(
+            "As of 20 October, cumulative confirmed cases have reached 9704, "
+            "including 4687 deaths and 2595 recoveries."
+        )
+        assert parsed is not None
+        assert parsed.values == {"cases_confirmed": 9704, "deaths": 4687}
+        grounded = ground_record(parsed.values, evidence=parsed.sentence, source_text=parsed.sentence)
+        assert grounded.usable_fields == {"cases_confirmed": 9704, "deaths": 4687}
+
+    def test_declaration_date_is_the_outbreak_start(self) -> None:
+        text = (
+            "The patient died on 5 October 2026. Cases have been reported since "
+            "the declaration of the outbreak on 15 May 2026."
+        )
+        assert find_outbreak_start(text) == date(2026, 5, 15)
+
+    def test_a_death_date_alone_is_not_an_outbreak_start(self) -> None:
+        assert find_outbreak_start("The patient died on 5 October 2026.") is None
 
 
 class TestCountryAttribution:

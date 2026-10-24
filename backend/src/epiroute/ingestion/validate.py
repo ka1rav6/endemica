@@ -180,7 +180,12 @@ def validate_location(
             period_start, period_end = None, None
 
     status = _status_from_report(report)
-    value_type = ValueType.OBSERVED if status is ExtractionStatus.VERIFIED else ValueType.UNKNOWN
+    # A partial row still stores only the fields that passed grounding, so those
+    # counts are observed. A row with nothing left is not.
+    has_grounded_count = any(
+        value is not None for value in (confirmed, probable, suspected, deaths)
+    )
+    value_type = ValueType.OBSERVED if has_grounded_count else ValueType.UNKNOWN
 
     observation = ValidatedObservation(
         country_iso3=iso3,

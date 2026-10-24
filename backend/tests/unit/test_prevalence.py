@@ -17,8 +17,10 @@ from epiroute.epidemiology.prevalence import (
     PrevalenceEstimate,
     PrevalenceMethod,
     PrevalenceUnavailable,
+    ReportedCount,
     estimate_from_incidence,
     estimate_from_single_report,
+    prevalence_from_series,
 )
 
 NOW = datetime(2026, 10, 24, tzinfo=UTC)
@@ -167,8 +169,8 @@ class TestSingleReportFallback:
         assert result.method is PrevalenceMethod.RECENT_WINDOW
         assert result.infectious_cases_central == pytest.approx(400.0)
 
-    def test_unknown_age_treats_every_case_as_infectious(self) -> None:
-        """The most pessimistic reading, and it says so."""
+    def test_unknown_age_is_declined(self) -> None:
+        """A cumulative total with no start date is not a prevalence."""
         result = estimate_from_single_report(
             1000,
             _days_ago(4),
@@ -178,9 +180,8 @@ class TestSingleReportFallback:
             underreporting=(1.0, 1.0, 1.0),
             as_of=NOW,
         )
-        assert isinstance(result, PrevalenceEstimate)
-        assert result.infectious_cases_central == pytest.approx(1000.0)
-        assert any("most pessimistic" in c for c in result.caveats)
+        assert isinstance(result, PrevalenceUnavailable)
+        assert result.reason == "outbreak_age_unknown"
 
     def test_outbreak_younger_than_the_infectious_period_has_no_recoveries(self) -> None:
         """The active fraction is floored at 1, never above it."""
@@ -229,10 +230,107 @@ class TestSingleReportFallback:
 
     def test_fallback_is_flagged_as_weaker(self) -> None:
         result = estimate_from_single_report(
-            100, _days_ago(1), population=POP, infectious_period_days=7.0, as_of=NOW
+            100,
+            _days_ago(1),
+            population=POP,
+            infectious_period_days=7.0,
+            outbreak_age_days=30.0,
+            as_of=NOW,
         )
         assert isinstance(result, PrevalenceEstimate)
         assert any("weaker" in c for c in result.caveats)
+
+
+class TestSeriesSelection:
+    """The series chooser must not let the weak estimator overrule the strong one."""
+
+    def test_two_increasing_reports_use_incidence(self) -> None:
+        result = prevalence_from_series(
+            [
+                ReportedCount(_days_ago(18), 100),
+                ReportedCount(_days_ago(4), 240),
+            ],
+            population=POP,
+            infectious_period_days=7.0,
+            underreporting=(2.0, 4.0, 10.0),
+            as_of=NOW,
+        )
+        assert isinstance(result, PrevalenceEstimate)
+        assert result.method is PrevalenceMethod.INCIDENCE_DIFFERENCE
+        assert result.infectious_cases_central == pytest.approx(280.0)
+
+    def test_flat_series_is_not_replaced_by_the_cumulative_guess(self) -> None:
+        """500 cases twice is not evidence that 500 people are still infectious."""
+        result = prevalence_from_series(
+            [
+                ReportedCount(_days_ago(20), 500),
+                ReportedCount(_days_ago(2), 500),
+            ],
+            population=POP,
+            infectious_period_days=7.0,
+            as_of=NOW,
+        )
+        assert isinstance(result, PrevalenceUnavailable)
+        assert result.reason == "no_new_cases"
+
+    def test_downward_revision_is_not_replaced_by_the_cumulative_guess(self) -> None:
+        result = prevalence_from_series(
+            [
+                ReportedCount(_days_ago(20), 500),
+                ReportedCount(_days_ago(2), 400),
+            ],
+            population=POP,
+            infectious_period_days=7.0,
+            as_of=NOW,
+        )
+        assert isinstance(result, PrevalenceUnavailable)
+        assert result.reason == "counts_revised_downwards"
+
+    def test_a_duplicate_timestamp_does_not_hide_an_earlier_change(self) -> None:
+        result = prevalence_from_series(
+            [
+                ReportedCount(_days_ago(18), 100),
+                ReportedCount(_days_ago(4), 240),
+                ReportedCount(_days_ago(4), 240),
+            ],
+            population=POP,
+            infectious_period_days=7.0,
+            underreporting=(2.0, 4.0, 10.0),
+            as_of=NOW,
+        )
+        assert isinstance(result, PrevalenceEstimate)
+        assert result.method is PrevalenceMethod.INCIDENCE_DIFFERENCE
+        assert result.infectious_cases_central == pytest.approx(280.0)
+
+    def test_one_report_without_a_start_date_is_declined(self) -> None:
+        result = prevalence_from_series(
+            [ReportedCount(_days_ago(4), 1000)],
+            population=POP,
+            infectious_period_days=7.0,
+            underreporting=(2.0, 4.0, 10.0),
+            as_of=NOW,
+        )
+        assert isinstance(result, PrevalenceUnavailable)
+        assert result.reason == "outbreak_age_unknown"
+
+    def test_one_report_with_a_stated_start_uses_the_uniform_window(self) -> None:
+        """1000 cases over 70 days, 7-day infectious period, u = 4 → 400."""
+        result = prevalence_from_series(
+            [
+                ReportedCount(
+                    _days_ago(4),
+                    1000,
+                    outbreak_started_on=_days_ago(74).date(),
+                )
+            ],
+            population=POP,
+            infectious_period_days=7.0,
+            underreporting=(2.0, 4.0, 10.0),
+            as_of=NOW,
+        )
+        assert isinstance(result, PrevalenceEstimate)
+        assert result.method is PrevalenceMethod.RECENT_WINDOW
+        assert result.infectious_cases_central == pytest.approx(400.0)
 
 
 class TestValidation:

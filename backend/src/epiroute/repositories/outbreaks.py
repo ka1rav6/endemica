@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.sql.elements import ColumnElement
 
 from epiroute.db.models import IngestionRun, OutbreakObservation, OutbreakReport
+from epiroute.ingestion.parser import find_outbreak_start
 from epiroute.schemas.common import ExtractionStatus
 
 
@@ -17,6 +19,7 @@ class CumulativePoint:
     deaths: int | None
     report_identifier: str
     report_url: str
+    outbreak_started_on: date | None = None
 
 
 def get_report(session: Session, report_id: str) -> OutbreakReport | None:
@@ -95,16 +98,33 @@ def count_reports(
     return session.scalar(statement) or 0
 
 
+def _feeds_model() -> tuple[ColumnElement[bool], ColumnElement[bool]]:
+    """Rows whose stored counts were grounded and may enter a calculation.
+
+    ``partial`` means at least one field passed grounding and the failing
+    fields were discarded before storage. ``unverified`` means nothing stored
+    was found in the source, so those rows stay out.
+    """
+    return (
+        OutbreakObservation.grounding_status.in_(
+            (ExtractionStatus.VERIFIED, ExtractionStatus.PARTIAL)
+        ),
+        or_(
+            OutbreakObservation.cases_confirmed.is_not(None),
+            OutbreakObservation.cases_probable.is_not(None),
+            OutbreakObservation.cases_suspected.is_not(None),
+            OutbreakObservation.deaths.is_not(None),
+        ),
+    )
+
+
 def verified_observations_for_country(
     session: Session, country_iso3: str, *, pathogen_key: str | None = None
 ) -> list[tuple[OutbreakObservation, OutbreakReport]]:
     statement = (
         select(OutbreakObservation, OutbreakReport)
         .join(OutbreakReport, OutbreakObservation.report_id == OutbreakReport.id)
-        .where(
-            OutbreakObservation.country_iso3 == country_iso3.upper(),
-            OutbreakObservation.grounding_status == ExtractionStatus.VERIFIED,
-        )
+        .where(OutbreakObservation.country_iso3 == country_iso3.upper(), *_feeds_model())
         .order_by(OutbreakReport.published_at.desc().nullslast())
     )
     if pathogen_key:
@@ -132,6 +152,7 @@ def cumulative_series(
             deaths=deaths,
             report_identifier=report.source_identifier,
             report_url=report.source_url,
+            outbreak_started_on=find_outbreak_start(report.narrative_text or ""),
         )
 
     series = sorted(by_report.values(), key=lambda p: p.published_at)
@@ -160,6 +181,7 @@ def _running_max(series: list[CumulativePoint]) -> list[CumulativePoint]:
                 deaths=best_deaths,
                 report_identifier=point.report_identifier,
                 report_url=point.report_url,
+                outbreak_started_on=point.outbreak_started_on,
             )
         )
     return out
@@ -171,7 +193,7 @@ def countries_with_active_outbreaks(
     statement = (
         select(OutbreakObservation.country_iso3)
         .join(OutbreakReport, OutbreakObservation.report_id == OutbreakReport.id)
-        .where(OutbreakObservation.grounding_status == ExtractionStatus.VERIFIED)
+        .where(*_feeds_model())
         .distinct()
     )
     if pathogen_key:
