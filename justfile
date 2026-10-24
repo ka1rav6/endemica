@@ -404,6 +404,11 @@ data-fingerprint:
 ingest-archive *args:
     "{{ py }}" -m epiroute.cli ingest-archive {{ args }}
 
+# Load WHO's COVID-19 global data table. Disease Outbreak News stopped covering
+# COVID-19 in early 2020, so its counts come from WHO's dedicated data product.
+ingest-covid *args:
+    "{{ py }}" -m epiroute.cli ingest-covid {{ args }}
+
 # Write an offline demonstration snapshot to data/snapshot.
 snapshot-build:
     "{{ py }}" -m epiroute.cli snapshot-build

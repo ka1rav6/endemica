@@ -581,6 +581,35 @@ def cmd_ingest(args: argparse.Namespace) -> int:
     return 0 if summary.status == "succeeded" else 1
 
 
+def cmd_ingest_covid(args: argparse.Namespace) -> int:
+    """Load WHO's COVID-19 global data table.
+
+    COVID-19 is the one disease Disease Outbreak News stopped covering, so its
+    counts come from WHO's dedicated data product instead. See
+    epiroute.ingestion.covid_global for why.
+    """
+    from epiroute.db.session import session_scope
+    from epiroute.ingestion import covid_global
+
+    _print_header("Ingesting the WHO COVID-19 global data table")
+    print(f"  source: {covid_global.DATA_URL}")
+    with session_scope() as session:
+        summary = covid_global.ingest(session, force_download=args.refresh, trigger=args.trigger)
+    print(f"\n  run id:               {summary.run_id}")
+    print(f"  monthly snapshots:    {summary.months}")
+    print(f"  reports created:      {summary.reports_created}")
+    print(f"  reports updated:      {summary.reports_updated}")
+    print(f"  observations stored:  {summary.observations_created}")
+    print(f"  countries covered:    {summary.countries}")
+    if summary.latest_as_of is not None:
+        print(f"  latest data as of:    {summary.latest_as_of.isoformat()}")
+    print(f"  file sha256:          {summary.content_sha256[:16]}")
+    skipped = summary.detail.get("entities_skipped", 0)
+    if skipped:
+        print(f"  non-country entities skipped: {skipped} (conveyances have no ISO-3 code)")
+    return 0
+
+
 def cmd_data_archive(args: argparse.Namespace) -> int:
     import json
 
@@ -823,6 +852,16 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-agent", action="store_true", help="Skip TinyFish Agent extraction.")
     p.add_argument("--trigger", default="manual", choices=["manual", "webhook", "scheduled"])
     p.set_defaults(func=cmd_ingest)
+
+    p = subparsers.add_parser(
+        "ingest-covid",
+        help="Load WHO's COVID-19 global data table (DON does not cover COVID-19).",
+    )
+    p.add_argument(
+        "--refresh", action="store_true", help="Re-download the file instead of using the cache."
+    )
+    p.add_argument("--trigger", default="manual", choices=["manual", "webhook", "scheduled"])
+    p.set_defaults(func=cmd_ingest_covid)
 
     p = subparsers.add_parser(
         "data-archive", help="Download every page of the WHO Disease Outbreak News archive."

@@ -9,7 +9,12 @@ from sqlalchemy import Select, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.sql.elements import ColumnElement
 
-from epiroute.db.models import IngestionRun, OutbreakObservation, OutbreakReport
+from epiroute.db.models import (
+    DatasetVersion,
+    IngestionRun,
+    OutbreakObservation,
+    OutbreakReport,
+)
 from epiroute.ingestion.parser import find_outbreak_start
 from epiroute.schemas.common import ExtractionStatus
 
@@ -783,16 +788,31 @@ def list_disease_history(session: Session) -> list[DiseaseHistoryRecord]:
     ).all():
         countries[key] = count
 
+    # A disease's profile is the one most of its reports map to, not the
+    # alphabetically largest. COVID-19 is why: ten legacy Disease Outbreak News
+    # items worded "Novel Coronavirus" match no profile alias and fall back to
+    # the generic respiratory profile, while the eighty WHO COVID-19 data
+    # snapshots map to covid_19. Taking the maximum returned the fallback and
+    # the API then served generic respiratory parameters for SARS-CoV-2.
     pathogens: dict[str | None, str | None] = {}
-    for key, pathogen in session.execute(
-        select(OutbreakReport.disease_key, func.max(OutbreakReport.pathogen_key))
+    pathogen_counts: dict[str | None, tuple[int, datetime]] = {}
+    for key, pathogen, count, latest in session.execute(
+        select(
+            OutbreakReport.disease_key,
+            OutbreakReport.pathogen_key,
+            func.count(OutbreakReport.id),
+            func.max(OutbreakReport.published_at),
+        )
         .where(
             OutbreakReport.disease_key.is_not(None),
             OutbreakReport.pathogen_key.is_not(None),
         )
-        .group_by(OutbreakReport.disease_key)
+        .group_by(OutbreakReport.disease_key, OutbreakReport.pathogen_key)
     ).all():
-        pathogens[key] = pathogen
+        rank = (int(count), latest or datetime.min.replace(tzinfo=UTC))
+        if rank > pathogen_counts.get(key, (-1, datetime.min.replace(tzinfo=UTC))):
+            pathogen_counts[key] = rank
+            pathogens[key] = pathogen
 
     # One paired endpoint per country, then summed. Both numbers in a row come
     # from the same bulletin about the same episode, so they can be added up
@@ -1245,7 +1265,10 @@ def grounded_fingerprint(session: Session) -> dict[str, object]:
     for (disease, _iso3), endpoint in endpoints.items():
         cases, deaths, countries = per_disease.get(disease, (0, 0, 0))
         per_disease[disease] = (
-            cases + (endpoint.cases_confirmed or 0),
+            # cases_any, not cases_confirmed: the fingerprint has to summarise
+            # the number the UI shows, or two checkouts could print the same
+            # digest while displaying different totals.
+            cases + (endpoint.cases_any or 0),
             deaths + (endpoint.deaths or 0),
             countries + 1,
         )
@@ -1253,6 +1276,19 @@ def grounded_fingerprint(session: Session) -> dict[str, object]:
         f"{disease}:{values[0]}:{values[1]}:{values[2]}"
         for disease, values in sorted(per_disease.items())
     )
+    # Which snapshot of each live source file this checkout holds. The WHO
+    # COVID-19 table is revised in place, so two checkouts that downloaded it on
+    # different days will disagree on COVID-19 and on nothing else; the digest
+    # turns that from a mystery into a one-line diff.
+    sources: dict[str, str] = {}
+    for dataset, digest in session.execute(
+        select(DatasetVersion.dataset, DatasetVersion.content_sha256).where(
+            DatasetVersion.is_active.is_(True),
+            DatasetVersion.content_sha256.is_not(None),
+        )
+    ).all():
+        sources[str(dataset)] = str(digest)[:16]
+
     methods: dict[str, int] = {}
     for method, count in session.execute(
         select(OutbreakReport.extraction_method, func.count(OutbreakReport.id)).group_by(
@@ -1267,6 +1303,7 @@ def grounded_fingerprint(session: Session) -> dict[str, object]:
         "grounded_series_count": len(endpoints),
         "disease_count": len(per_disease),
         "extraction_methods": methods,
+        "source_file_digests": dict(sorted(sources.items())),
         "grounded_digest": hashlib.sha256(encoded.encode("utf-8")).hexdigest(),
         "per_disease": {
             disease: {"cases_confirmed": values[0], "deaths": values[1], "countries": values[2]}
