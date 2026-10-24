@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { arrivalColor } from '@/lib/riskColor';
+import { riskColor } from '@/lib/riskColor';
 import { clipLine, spreadArcs, type LocatedCountry } from '@/lib/spreadFlow';
 import type { MapSpreadEntry } from '@/lib/spread';
 
@@ -60,7 +60,7 @@ describe('spreadArcs', () => {
     expect(arcs.every((arc) => arc.fromName === 'AAA')).toBe(true);
     expect(arcs[0]?.coordinates.length).toBeGreaterThan(2);
     // (2020 - 2019) / (2022 - 2019) = 1/3 of the way along the arrival ramp.
-    expect(arcs[0]?.color).toBe(arrivalColor(10 / 3));
+    expect(arcs[0]?.color).toBe(riskColor(10 / 3));
   });
 
   it('uses the earlier footprint when the previous calendar year added nobody', () => {

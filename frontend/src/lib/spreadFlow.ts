@@ -1,6 +1,6 @@
 import type { FeatureCollection, LineString } from 'geojson';
 import { greatCircleKm, greatCircleLine } from '@/lib/geo';
-import { arrivalColor } from '@/lib/riskColor';
+import { riskColor } from '@/lib/riskColor';
 import type { MapSpreadEntry } from '@/lib/spread';
 
 /** Draw every pair when the outbreak step is small. Larger steps use one arc each. */
@@ -100,7 +100,7 @@ export function spreadArcs(
   const first = span?.first ?? Math.min(...years);
   const last = span?.last ?? Math.max(...years);
   const lateness = last === first ? 0 : Math.min(1, Math.max(0, (year - first) / (last - first)));
-  const color = arrivalColor(lateness * 10);
+  const color = riskColor(lateness * 10);
 
   const pairs: [MapSpreadEntry, MapSpreadEntry][] = [];
   if (sources.length * targets.length <= PAIR_LIMIT) {

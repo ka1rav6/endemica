@@ -1,5 +1,6 @@
 /**
- * Shared green → red danger ramp.
+ * The one green → red ramp. Every shaded map and panel reads off this list,
+ * so the same colour means the same intensity wherever it appears.
  *
  * 0–2 green, 3–4 yellow-green, 5–6 amber, 7–8 orange, 9–10 red.
  * Values between the stops are interpolated in sRGB, which is the same
@@ -55,28 +56,6 @@ export function riskColor(score: number): string {
 }
 
 /**
- * Order of arrival, which is a sequence and not a danger reading.
- *
- * It needs its own ramp: a country that has an outbreak must never be drawn in
- * the green that means "low risk" on the ramp above, however early it reported.
- * Pale amber through orange into the same deep red the risk ramp tops out at,
- * so the warmest colour means the same thing on both.
- */
-export const ARRIVAL_COLOR_STOPS: readonly (readonly [number, string])[] = [
-  [0, '#ffe0a3'],
-  [2, '#ffc266'],
-  [4, '#ff9a45'],
-  [6, '#f4703a'],
-  [8, '#e04a32'],
-  [10, '#c41919'],
-];
-
-/** Colour for a 0–10 arrival position. Out-of-range values are clamped. */
-export function arrivalColor(position: number): string {
-  return colorFromStops(ARRIVAL_COLOR_STOPS, position);
-}
-
-/**
  * MapLibre interpolate expression over `stops`.
  * `input` is a numeric expression already on the 0–10 scale.
  */
@@ -94,9 +73,4 @@ export function rampExpression(
 /** Same stops as {@link riskColor}. */
 export function riskFillExpression(input: unknown[]): unknown[] {
   return rampExpression(RISK_COLOR_STOPS, input);
-}
-
-/** Same stops as {@link arrivalColor}. */
-export function arrivalFillExpression(input: unknown[]): unknown[] {
-  return rampExpression(ARRIVAL_COLOR_STOPS, input);
 }

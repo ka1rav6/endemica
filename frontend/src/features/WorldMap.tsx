@@ -16,13 +16,7 @@ setWorkerUrl(maplibreWorkerUrl);
 import type { Feature, FeatureCollection, LineString, Point as GeoPoint } from 'geojson';
 import { formatCount, formatPassengers } from '@/lib/format';
 import { greatCircleLine } from '@/lib/geo';
-import {
-  ARRIVAL_COLOR_STOPS,
-  RISK_COLOR_STOPS,
-  arrivalColor,
-  arrivalFillExpression,
-  riskFillExpression,
-} from '@/lib/riskColor';
+import { RISK_COLOR_STOPS, riskColor, riskFillExpression } from '@/lib/riskColor';
 import type { MapSpreadEntry } from '@/lib/spread';
 import { arcsToCollection, spreadArcs, type SpreadArc } from '@/lib/spreadFlow';
 import type { Country, OriginContribution, Route } from '@/types/api';
@@ -56,8 +50,6 @@ interface Props {
   routes: Route[];
   showFlows: boolean;
   forecast?: { iso3: string; probability: number }[];
-  /** Travel-risk index for the selected country, or null when it is not estimable. */
-  selectedRisk?: number | null;
   /** Full outbreak span, so a year early in the timeline stays green. */
   spreadSpan?: { first: number; last: number } | null;
 }
@@ -208,21 +200,14 @@ function routePopup(properties: Record<string, unknown>): HTMLElement {
   return root;
 }
 
-// Order matters. A country that is already reporting is drawn as such before
-// anything else is considered, so it can never fall through onto the green end
-// of the risk ramp and read as safe.
+// Selection is deliberately absent from this list. Clicking a country must not
+// repaint it: what it is shaded for — when it reported, how much it is carrying,
+// how likely it is to be reached — does not change because someone looked at it.
+// The outline and the pin are what mark the selection.
 const fillColour = [
   'case',
-  [
-    'all',
-    ['boolean', ['feature-state', 'selected'], false],
-    ['boolean', ['feature-state', 'hasRisk'], false],
-  ],
-  riskFillExpression(['coalesce', ['feature-state', 'risk'], 0]),
-  ['boolean', ['feature-state', 'activeLoad'], false],
-  riskFillExpression(['*', ['coalesce', ['feature-state', 'order'], 0], 10]),
   ['boolean', ['feature-state', 'affected'], false],
-  arrivalFillExpression(['*', ['coalesce', ['feature-state', 'order'], 0], 10]),
+  riskFillExpression(['*', ['coalesce', ['feature-state', 'order'], 0], 10]),
   ['boolean', ['feature-state', 'forecast'], false],
   riskFillExpression(['*', ['coalesce', ['feature-state', 'probability'], 0], 10]),
   ['boolean', ['feature-state', 'hasAnyReport'], false],
@@ -250,7 +235,6 @@ export function WorldMap({
   routes,
   showFlows,
   forecast = [],
-  selectedRisk = null,
   spreadSpan = null,
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -682,13 +666,11 @@ export function WorldMap({
       }
     }
     for (const entry of spread) {
-      // Spread: early arrival is green, late arrival red. Active view: a country
-      // reporting an outbreak right now is never green, so the load is mapped
-      // onto the upper half of the ramp and more diseases pushes it to red.
-      const danger = activeMode ? 0.5 + (1 - entry.arrivalShare) * 0.5 : entry.arrivalShare;
+      // Green is the low end of the one ramp either way: early arrival when a
+      // single disease is shown, fewest diseases in the combined view.
       map.setFeatureState(
         { source: 'countries', id: entry.iso3 },
-        { affected: true, activeLoad: activeMode, order: danger },
+        { affected: true, order: entry.arrivalShare },
       );
     }
     for (const entry of forecast) {
@@ -701,14 +683,9 @@ export function WorldMap({
       map.setFeatureState({ source: 'countries', id: comparisonIso3 }, { compared: true });
     }
     if (selectedIso3) {
-      map.setFeatureState(
-        { source: 'countries', id: selectedIso3 },
-        selectedRisk === null || !Number.isFinite(selectedRisk)
-          ? { selected: true }
-          : { selected: true, hasRisk: true, risk: selectedRisk },
-      );
+      map.setFeatureState({ source: 'countries', id: selectedIso3 }, { selected: true });
     }
-  }, [ready, countries, spread, forecast, selectedIso3, comparisonIso3, selectedRisk, activeMode]);
+  }, [ready, countries, spread, forecast, selectedIso3, comparisonIso3, activeMode]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -841,7 +818,7 @@ export function WorldMap({
               {activeMode ? 'Diseases reported' : 'When it arrived'}
             </span>
             <span className="legend__ramp" aria-hidden="true">
-              {(activeMode ? RISK_COLOR_STOPS : ARRIVAL_COLOR_STOPS).map(([stop, colour]) => (
+              {RISK_COLOR_STOPS.map(([stop, colour]) => (
                 <i key={stop} style={{ background: colour }} />
               ))}
             </span>
@@ -851,7 +828,7 @@ export function WorldMap({
             </span>
             {!activeMode && yearCeiling !== null && (
               <span className="legend__row">
-                <span className="swatch swatch--line" style={{ background: arrivalColor(7) }} />
+                <span className="swatch swatch--line" style={{ background: riskColor(7) }} />
                 Growth into {yearCeiling}
               </span>
             )}

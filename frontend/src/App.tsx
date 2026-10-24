@@ -428,7 +428,6 @@ export default function App() {
                   }))
                 : []
             }
-            selectedRisk={activeRisk?.travel_index.score ?? null}
             spreadSpan={spreadSpan}
           />
           {!activeMode && (

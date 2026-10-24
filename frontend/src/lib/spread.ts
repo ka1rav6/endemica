@@ -51,7 +51,10 @@ export function spreadEntries(
  * Countries currently reporting something, coloured by how many diseases.
  *
  * The combined view has no arrival order to show, so `arrivalShare` carries
- * disease load instead and the map legend says so.
+ * disease load instead and the map legend says so. It runs the same way round
+ * as the arrival share above: 0 is the cool end of the ramp, 1 the hot one. A
+ * set that all carry the same load has no gradient to draw, so it sits at the
+ * hot end rather than the safe-looking one.
  */
 export function activeCountryEntries(countries: ActiveCountry[]): MapSpreadEntry[] {
   const worst = Math.max(...countries.map((entry) => entry.disease_count), 1);
@@ -59,7 +62,7 @@ export function activeCountryEntries(countries: ActiveCountry[]): MapSpreadEntry
     iso3: entry.country_iso3,
     name: entry.country_name,
     arrivalOrder: index + 1,
-    arrivalShare: 1 - (entry.disease_count - 1) / Math.max(worst - 1, 1),
+    arrivalShare: entry.disease_count / worst,
     firstYear: entry.last_published_at ? Number(entry.last_published_at.slice(0, 4)) : null,
     cases: entry.cases_confirmed,
     deaths: entry.deaths,
