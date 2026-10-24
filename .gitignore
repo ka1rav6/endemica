@@ -218,3 +218,39 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ---------------------------------------------------------------------------
+# EpiRoute project-specific
+# ---------------------------------------------------------------------------
+
+# The generic Python template above ignores `lib/`, `build/` and `dist/` at any
+# depth. The frontend legitimately uses `src/lib/`, so un-ignore it explicitly.
+!frontend/src/lib/
+!frontend/src/lib/**
+
+# Node
+node_modules/
+frontend/dist/
+frontend/.vite/
+*.tsbuildinfo
+
+# Downloaded datasets and generated artefacts are reproducible from
+# `just data-fetch` / `just data-build`, so they are not committed.
+# Trailing `/*` rather than `/` so the `.gitkeep` negation below can still
+# re-include the placeholder files (git cannot look inside an ignored directory).
+data/raw/*
+data/processed/*
+data/cache/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/cache/.gitkeep
+
+# Local runtime output
+logs/
+*.log
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+
+# Postgres container volume
+.pgdata/

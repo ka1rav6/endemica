@@ -1,0 +1,29 @@
+# PostgreSQL for local development. EpiRoute's primary datastore is PostgreSQL;
+# the container keeps setup to one command and avoids clashing with any
+# system-wide server (the host port is deliberately non-default).
+#
+# Start with `just db-up`, stop with `just db-down`.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: epiroute-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-epiroute}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-epiroute}
+      POSTGRES_DB: ${POSTGRES_DB:-epiroute}
+      # Deterministic collation so index ordering does not vary by host locale.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    ports:
+      - "${POSTGRES_PORT:-55433}:5432"
+    volumes:
+      - epiroute_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-epiroute} -d ${POSTGRES_DB:-epiroute}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  epiroute_pgdata:
+    name: epiroute_pgdata

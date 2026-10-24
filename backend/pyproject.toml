@@ -1,0 +1,122 @@
+[project]
+name = "epiroute"
+version = "0.1.0"
+description = "EpiRoute — outbreak intelligence over the air-travel network"
+readme = "../README.md"
+requires-python = ">=3.11"
+license = { file = "../LICENSE" }
+
+# Runtime dependencies. Each entry is here because a documented feature needs
+# it; see docs/architecture.md for the reasoning behind the non-obvious ones.
+dependencies = [
+    "fastapi>=0.115,<0.120",
+    "uvicorn[standard]>=0.32,<0.40",
+    "pydantic>=2.9,<3",
+    "pydantic-settings>=2.6,<3",
+    "sqlalchemy>=2.0.36,<2.1",
+    "psycopg[binary]>=3.2,<4",       # PostgreSQL driver (psycopg 3)
+    "alembic>=1.14,<2",
+    "httpx>=0.27,<0.29",             # outbound HTTP with explicit timeouts
+    "selectolax>=0.3.21,<0.4",       # fast, dependency-light HTML -> text
+    "pandas>=2.2,<3",
+    "numpy>=1.26,<3",
+    "pyarrow>=18,<22",               # Parquet for the cached flow matrix
+    "networkx>=3.3,<4",              # effective-distance shortest paths
+    "pycountry>=24.6.1",             # ISO-3166 reference data
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3,<9",
+    "pytest-cov>=6,<8",
+    "respx>=0.21,<0.23",             # mock httpx transports in ingestion tests
+    "ruff>=0.8,<0.16",
+    "mypy>=1.13,<2",
+    "types-requests",
+    "pandas-stubs",
+]
+
+[project.scripts]
+epiroute = "epiroute.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/epiroute"]
+
+# ---------------------------------------------------------------------------
+# Ruff — linting and formatting
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",    # pycodestyle
+    "F",         # pyflakes
+    "I",         # import sorting
+    "B",         # bugbear
+    "UP",        # pyupgrade
+    "C4",        # comprehensions
+    "SIM",       # simplify
+    "RUF",       # ruff-specific
+    "ANN",       # annotations on public surfaces
+    "D",         # docstrings
+    "PTH",       # prefer pathlib
+    "TRY",       # error-handling antipatterns
+    "ARG",       # unused arguments
+    "N",         # naming
+]
+ignore = [
+    "D104",    # package docstrings are not required on every __init__
+    "D203",    # incompatible with D211
+    "D213",    # incompatible with D212
+    "ANN401",  # Any is occasionally the honest annotation for external JSON
+    "TRY003",  # long messages inside raise are useful for operators
+    "B008",    # FastAPI's Depends()/Query() defaults are the documented idiom
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests document themselves through their names; full docstring rules and
+# annotation rules would add noise without improving clarity.
+"tests/**" = ["D", "ANN", "ARG", "E501"]
+"src/epiroute/db/migrations/**" = ["D", "ANN", "E501", "I"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+# ---------------------------------------------------------------------------
+# mypy — static type checking
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.11"
+files = ["src", "tests"]
+strict = true
+plugins = []
+warn_unreachable = true
+# Third-party packages without bundled type information.
+[[tool.mypy.overrides]]
+module = ["selectolax.*", "networkx.*", "pycountry.*", "respx.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disallow_untyped_defs = false
+disallow_untyped_calls = false
+
+# ---------------------------------------------------------------------------
+# pytest
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = "-ra --strict-markers --strict-config"
+markers = [
+    "integration: requires a live PostgreSQL database (see `just test-integration`)",
+    "network: requires outbound internet access; excluded from the default run",
+]
+filterwarnings = ["error::DeprecationWarning:epiroute.*"]
