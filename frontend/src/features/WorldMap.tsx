@@ -580,12 +580,15 @@ export function WorldMap({
       })();
     };
 
-    const boot = () => {
-      if (cancelled || started) return;
-      if (map.isStyleLoaded()) start();
-      else map.once('styledata', boot);
-    };
-    boot();
+    // Whichever arrives first wins; `start` is guarded against running twice.
+    // `isStyleLoaded` alone is not enough, because that flag only flips during
+    // a draw and a hidden page draws nothing.
+    if (map.isStyleLoaded()) start();
+    else {
+      map.once('style.load', start);
+      map.once('load', start);
+      map.on('styledata', start);
+    }
 
     return () => {
       cancelled = true;
