@@ -1,15 +1,34 @@
-import type { Country, HealthResponse } from '@/types/api';
+import type { Country, DiseaseOption, HealthResponse } from '@/types/api';
 
 interface Props {
   countries: Country[];
   selectedIso3: string | null;
   onSelect: (iso3: string) => void;
+  diseases: DiseaseOption[];
+  selectedDisease: string | null;
+  onDisease: (disease: DiseaseOption | null) => void;
   health: HealthResponse | null;
   onIngest: () => void;
   ingesting: boolean;
 }
 
-export function TopBar({ countries, selectedIso3, onSelect, health, onIngest, ingesting }: Props) {
+function hasDisease(country: Country, disease: string | null): boolean {
+  if (!disease) return false;
+  const needle = disease.toLowerCase();
+  return (country.diseases ?? []).some((name) => name.toLowerCase() === needle);
+}
+
+export function TopBar({
+  countries,
+  selectedIso3,
+  onSelect,
+  diseases,
+  selectedDisease,
+  onDisease,
+  health,
+  onIngest,
+  ingesting,
+}: Props) {
   const tinyfish = health?.components.find((component) => component.name === 'tinyfish');
   const database = health?.components.find((component) => component.name === 'database');
 

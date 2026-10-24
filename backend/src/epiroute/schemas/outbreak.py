@@ -89,7 +89,18 @@ class CountryOut(BaseModel):
     centroid_lat: float | None = None
     centroid_lon: float | None = None
     has_reported_outbreak: bool = False
+    diseases: list[str] = Field(default_factory=list)
     inbound_flow_count: int = 0
+
+
+class DiseaseOut(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    disease_label: str
+    pathogen_key: str | None = None
+    country_count: int
+    report_count: int
+    latest_published_at: datetime | None = None
 
 
 class CountryListResponse(BaseModel):

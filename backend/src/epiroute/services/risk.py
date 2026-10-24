@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import timedelta
 
 from sqlalchemy.orm import Session
@@ -108,10 +108,14 @@ def _resolve_profile(
 
 
 def _build_presence(
-    session: Session, destination_iso3: str, pathogen_key: str | None
+    session: Session,
+    destination_iso3: str,
+    pathogen_key: str | None,
+    *,
+    disease_label: str | None = None,
 ) -> LocalPresence:
     rows = outbreak_repo.verified_observations_for_country(
-        session, destination_iso3, pathogen_key=pathogen_key
+        session, destination_iso3, pathogen_key=pathogen_key, disease_label=disease_label
     )
     if not rows:
         return LocalPresence(
@@ -175,12 +179,18 @@ def _build_presence(
 
 
 def _origin_prevalence(
-    session: Session, origin_iso3: str, profile: PathogenProfile, query: RiskQuery, population: int
+    session: Session,
+    origin_iso3: str,
+    profile: PathogenProfile,
+    query: RiskQuery,
+    population: int,
 ) -> prev.PrevalenceOutcome:
     if not profile.key:
         return prev.PrevalenceUnavailable("no_pathogen", "no pathogen profile selected")
 
-    series = outbreak_repo.cumulative_series(session, origin_iso3, profile.key)
+    series = outbreak_repo.cumulative_series(
+        session, origin_iso3, profile.key, disease_label=query.disease_label
+    )
     points = [
         prev.ReportedCount(
             published_at=point.published_at,
@@ -190,17 +200,42 @@ def _origin_prevalence(
         for point in series
         if point.cases_confirmed is not None
     ]
-    return prev.prevalence_from_series(
+    band = (
+        query.underreporting_low,
+        query.underreporting_central,
+        query.underreporting_high,
+    )
+    outcome = prev.prevalence_from_series(
         points,
         population=population,
         infectious_period_days=profile.infectious_period_days,
-        underreporting=(
-            query.underreporting_low,
-            query.underreporting_central,
-            query.underreporting_high,
-        ),
+        underreporting=band,
         as_of=utc_now(),
     )
+    if (
+        isinstance(outcome, prev.PrevalenceUnavailable)
+        and outcome.reason == "report_too_old"
+    ):
+        relaxed = prev.prevalence_from_series(
+            points,
+            population=population,
+            infectious_period_days=profile.infectious_period_days,
+            underreporting=band,
+            as_of=utc_now(),
+            max_report_age_days=prev.STALE_REPORT_MAX_AGE_DAYS,
+        )
+        if isinstance(relaxed, prev.PrevalenceEstimate):
+            return replace(
+                relaxed,
+                caveats=(
+                    *relaxed.caveats,
+                    "The latest report is older than 60 days. It is still used because it "
+                    "is the only grounded case series for this origin. The outbreak may "
+                    "have ended.",
+                ),
+            )
+        return relaxed
+    return outcome
 
 
 def _collect_origins(
@@ -208,10 +243,20 @@ def _collect_origins(
     destination_iso3: str,
     profile: PathogenProfile,
     query: RiskQuery,
-) -> tuple[list[_OriginInput], list[dict[str, str]], int]:
+) -> tuple[list[_OriginInput], list[dict[str, str]], int, bool]:
+    window = utc_now() - timedelta(days=PRESENCE_LOOKBACK_DAYS)
     candidates = outbreak_repo.countries_with_active_outbreaks(
-        session, pathogen_key=profile.key, since=utc_now() - timedelta(days=PRESENCE_LOOKBACK_DAYS)
+        session,
+        pathogen_key=profile.key,
+        disease_label=query.disease_label,
+        since=window,
     )
+    used_older_reports = False
+    if not candidates:
+        candidates = outbreak_repo.countries_with_active_outbreaks(
+            session, pathogen_key=profile.key, disease_label=query.disease_label
+        )
+        used_older_reports = bool(candidates)
     candidates = [c for c in candidates if c != destination_iso3.upper()]
     flows = reference_repo.flows_between(session, candidates, destination_iso3)
 
@@ -250,7 +295,7 @@ def _collect_origins(
             )
         )
 
-    return usable, excluded, len(candidates)
+    return usable, excluded, len(candidates), used_older_reports
 
 
 def _rate_for_scenario(
@@ -302,7 +347,10 @@ def compute_risk(session: Session, destination_iso3: str, query: RiskQuery) -> R
     if destination is None:
         raise NotFoundError("country", destination_iso3)
 
-    profile, matched_key, warnings = _resolve_profile(session, query.pathogen_key)
+    requested_key = query.pathogen_key
+    if requested_key is None and query.disease_label:
+        requested_key = outbreak_repo.pathogen_key_for_disease(session, query.disease_label)
+    profile, matched_key, warnings = _resolve_profile(session, requested_key)
     assert profile is not None
 
     alpha = query.alpha if query.alpha is not None else profile.alpha.central
@@ -329,8 +377,24 @@ def compute_risk(session: Session, destination_iso3: str, query: RiskQuery) -> R
     k_low = query.dispersion_k if query.dispersion_k is not None else profile.dispersion_k.low
     k_high = query.dispersion_k if query.dispersion_k is not None else profile.dispersion_k.high
 
-    presence = _build_presence(session, destination.iso3, profile.key)
-    origins, excluded, considered = _collect_origins(session, destination.iso3, profile, query)
+    presence = _build_presence(
+        session, destination.iso3, profile.key, disease_label=query.disease_label
+    )
+    origins, excluded, considered, used_older_reports = _collect_origins(
+        session, destination.iso3, profile, query
+    )
+    if used_older_reports:
+        warnings.append(
+            ResponseWarning(
+                code="older_outbreak_reports",
+                message=(
+                    "No grounded report for this disease was published in the last "
+                    f"{PRESENCE_LOOKBACK_DAYS} days, so older reports were used. "
+                    "The outbreak may have ended."
+                ),
+                severity="caution",
+            )
+        )
 
     horizon = query.horizon_days
     band_basis = (
@@ -697,6 +761,16 @@ def _scenario_markers(
     return markers
 
 
+def _disease_name(
+    session: Session, query: RiskQuery, pathogen_key: str | None, destination_iso3: str
+) -> str | None:
+    if query.disease_label:
+        return query.disease_label
+    return outbreak_repo.latest_disease_label(
+        session, pathogen_key, country_iso3=destination_iso3
+    ) or outbreak_repo.latest_disease_label(session, pathogen_key)
+
+
 def _assemble(
     destination: object,
     profile: PathogenProfile,
@@ -816,6 +890,7 @@ def _assemble(
         pathogen=PathogenSummary(
             key=matched_key or profile.key,
             label=profile.label,
+            disease_label=_disease_name(session, query, matched_key or profile.key, iso3),
             confidence=profile.confidence.value,
             establishment_estimable=profile.establishment_estimable,
             establishment_note=profile.establishment_note,

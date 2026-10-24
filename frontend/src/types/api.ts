@@ -131,6 +131,7 @@ export interface Country {
   centroid_lat: number | null;
   centroid_lon: number | null;
   has_reported_outbreak: boolean;
+  diseases?: string[];
   inbound_flow_count: number;
 }
 
@@ -222,9 +223,18 @@ export interface ScenarioMarker {
   detail: string;
 }
 
+export interface DiseaseOption {
+  disease_label: string;
+  pathogen_key: string | null;
+  country_count: number;
+  report_count: number;
+  latest_published_at: string | null;
+}
+
 export interface PathogenSummary {
   key: string | null;
   label: string;
+  disease_label?: string | null;
   confidence: string | null;
   establishment_estimable: boolean;
   establishment_note: string | null;
@@ -325,6 +335,7 @@ export interface ApiErrorBody {
 
 export interface RiskParams {
   pathogen?: string | undefined;
+  disease?: string | undefined;
   horizon_days?: number;
   underreporting_low?: number;
   underreporting_central?: number;

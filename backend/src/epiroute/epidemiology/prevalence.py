@@ -39,9 +39,9 @@ evenly:
     I \approx C \times \min\!\left(1, \frac{D}{A}\right) \times u
 
 where :math:`A` is the number of days from the stated start to the report
-date, floored at :math:`D`. A single cumulative total with no start date is
-not an estimate of who is infectious today, so the function returns "not
-estimable" rather than treating every historical case as still infectious.
+date, floored at :math:`D`. If the report never states a start date, :math:`A`
+is :data:`ASSUMED_OUTBREAK_AGE_DAYS` (90). That assumption is written into the
+estimate. Treating every historical case as still infectious is not used.
 
 **Staleness.** A report older than ``max_report_age_days`` yields
 :class:`PrevalenceUnavailable`, not a decayed number. An outbreak that stopped
@@ -83,6 +83,15 @@ DEFAULT_UNDERREPORTING = (2.0, 4.0, 10.0)
 # is roughly the interval after which WHO has usually published a follow-up or
 # the event has been closed; it is a project assumption, exposed as a setting.
 DEFAULT_MAX_REPORT_AGE_DAYS = 60.0
+
+# Used only when a report gives a cumulative total and does not say when the
+# outbreak began. 90 days is the same window EpiRoute treats as an active
+# outbreak. It is an assumption, and the estimate says so.
+ASSUMED_OUTBREAK_AGE_DAYS = 90.0
+
+# A report older than the default window can still be the only grounded series
+# we have. Callers may opt into this longer ceiling rather than returning nothing.
+STALE_REPORT_MAX_AGE_DAYS = 1825.0
 
 # Hard ceiling on the estimated prevalence. An estimate above this is almost
 # certainly a data error (a count mis-parsed by orders of magnitude, or a
@@ -366,9 +375,8 @@ def estimate_from_single_report(
 
     Applies :math:`I = C \times \min(1, D/A) \times u`. The
     :math:`\min(1, D/A)` factor assumes cases accumulated uniformly over the
-    outbreak's age :math:`A`. When the start date is unknown the function
-    declines: a cumulative total alone does not say how many people are
-    infectious today.
+    outbreak's age :math:`A`. When the start date is unknown, :math:`A` is
+    :data:`ASSUMED_OUTBREAK_AGE_DAYS` and the estimate says so.
 
     Args:
         cumulative_cases: Cumulative reported cases C, non-negative.
@@ -376,8 +384,8 @@ def estimate_from_single_report(
         population: Origin population N, positive.
         infectious_period_days: Mean infectious period D, positive.
         outbreak_age_days: Outbreak age A in days, from the stated start to the
-            report date. ``None`` means the start is unknown, and no estimate
-            is returned.
+            report date. ``None`` means the start was not stated, and
+            :data:`ASSUMED_OUTBREAK_AGE_DAYS` is used.
         underreporting: (low, central, high) multipliers, each >= 1.
         as_of: The time the estimate is being made.
         max_report_age_days: Reports older than this are not used.
@@ -425,16 +433,10 @@ def estimate_from_single_report(
             detail="The report names this country but states no case count.",
         )
 
+    assumed_age = False
     if outbreak_age_days is None:
-        return PrevalenceUnavailable(
-            reason="outbreak_age_unknown",
-            detail=(
-                "This origin has one cumulative case count and the report does not say "
-                "when the outbreak began. Current prevalence is not estimated from that "
-                "total, because doing so would treat every historical case as still "
-                "infectious."
-            ),
-        )
+        outbreak_age_days = ASSUMED_OUTBREAK_AGE_DAYS
+        assumed_age = True
     if not math.isfinite(outbreak_age_days) or outbreak_age_days < 0:
         msg = f"outbreak_age_days must be finite and non-negative, got {outbreak_age_days!r}"
         raise ModelInputError(msg)
@@ -443,11 +445,18 @@ def estimate_from_single_report(
     # infectious period cannot have had cases recover, so the fraction is 1.
     effective_age = max(outbreak_age_days, infectious_period_days)
     active_fraction = min(1.0, infectious_period_days / effective_age)
-    age_caveat = (
-        f"Assumes cases accumulated uniformly over the outbreak's {effective_age:.0f}-day "
-        f"apparent age, so {active_fraction:.0%} of reported cases are treated as "
-        f"currently infectious."
-    )
+    if assumed_age:
+        age_caveat = (
+            f"The report does not say when the outbreak began, so its age is assumed to be "
+            f"{ASSUMED_OUTBREAK_AGE_DAYS:.0f} days, the active-outbreak window. "
+            f"{active_fraction:.0%} of reported cases are treated as currently infectious."
+        )
+    else:
+        age_caveat = (
+            f"Assumes cases accumulated uniformly over the outbreak's {effective_age:.0f}-day "
+            f"apparent age, so {active_fraction:.0%} of reported cases are treated as "
+            f"currently infectious."
+        )
 
     base_infectious = cumulative_cases * active_fraction
     caveats = (
@@ -486,9 +495,9 @@ def prevalence_from_series(
     time. That result stands, including a refusal: a flat or revised-down
     series is evidence about current transmission, and the single-report
     formula must not replace it by treating the old cumulative total as still
-    infectious. The single-report formula runs only for one count whose report
-    states when the outbreak began. A cumulative total with no start date is
-    refused.
+    infectious. The single-report formula runs for one count. A stated start
+    date supplies the outbreak age; otherwise the age is
+    :data:`ASSUMED_OUTBREAK_AGE_DAYS`.
 
     Args:
         points: Grounded cumulative counts. Order does not matter.

@@ -119,7 +119,11 @@ def _feeds_model() -> tuple[ColumnElement[bool], ColumnElement[bool]]:
 
 
 def verified_observations_for_country(
-    session: Session, country_iso3: str, *, pathogen_key: str | None = None
+    session: Session,
+    country_iso3: str,
+    *,
+    pathogen_key: str | None = None,
+    disease_label: str | None = None,
 ) -> list[tuple[OutbreakObservation, OutbreakReport]]:
     statement = (
         select(OutbreakObservation, OutbreakReport)
@@ -129,13 +133,23 @@ def verified_observations_for_country(
     )
     if pathogen_key:
         statement = statement.where(OutbreakReport.pathogen_key == pathogen_key)
+    if disease_label:
+        statement = statement.where(
+            func.lower(OutbreakReport.disease_label) == disease_label.casefold()
+        )
     return [(obs, rep) for obs, rep in session.execute(statement)]
 
 
 def cumulative_series(
-    session: Session, country_iso3: str, pathogen_key: str
+    session: Session,
+    country_iso3: str,
+    pathogen_key: str,
+    *,
+    disease_label: str | None = None,
 ) -> list[CumulativePoint]:
-    rows = verified_observations_for_country(session, country_iso3, pathogen_key=pathogen_key)
+    rows = verified_observations_for_country(
+        session, country_iso3, pathogen_key=pathogen_key, disease_label=disease_label
+    )
     by_report: dict[str, CumulativePoint] = {}
     for observation, report in rows:
         if report.published_at is None:
@@ -188,7 +202,11 @@ def _running_max(series: list[CumulativePoint]) -> list[CumulativePoint]:
 
 
 def countries_with_active_outbreaks(
-    session: Session, *, pathogen_key: str | None = None, since: datetime | None = None
+    session: Session,
+    *,
+    pathogen_key: str | None = None,
+    disease_label: str | None = None,
+    since: datetime | None = None,
 ) -> list[str]:
     statement = (
         select(OutbreakObservation.country_iso3)
@@ -198,6 +216,10 @@ def countries_with_active_outbreaks(
     )
     if pathogen_key:
         statement = statement.where(OutbreakReport.pathogen_key == pathogen_key)
+    if disease_label:
+        statement = statement.where(
+            func.lower(OutbreakReport.disease_label) == disease_label.casefold()
+        )
     if since:
         statement = statement.where(OutbreakReport.published_at >= since)
     return list(session.scalars(statement))
@@ -211,6 +233,95 @@ def list_runs(session: Session, *, limit: int = 20) -> list[IngestionRun]:
     return list(
         session.scalars(select(IngestionRun).order_by(IngestionRun.started_at.desc()).limit(limit))
     )
+
+
+@dataclass(frozen=True, slots=True)
+class DiseaseRecord:
+    disease_label: str
+    pathogen_key: str | None
+    country_count: int
+    report_count: int
+    latest_published_at: datetime | None
+
+
+def list_diseases(session: Session) -> list[DiseaseRecord]:
+    """Diseases that have at least one grounded count, newest first."""
+    rows = session.execute(
+        select(
+            OutbreakReport.disease_label,
+            OutbreakReport.pathogen_key,
+            func.count(func.distinct(OutbreakObservation.country_iso3)),
+            func.count(func.distinct(OutbreakReport.id)),
+            func.max(OutbreakReport.published_at),
+        )
+        .join(OutbreakObservation, OutbreakObservation.report_id == OutbreakReport.id)
+        .where(*_feeds_model(), OutbreakReport.disease_label.is_not(None))
+        .group_by(OutbreakReport.disease_label, OutbreakReport.pathogen_key)
+        .order_by(func.max(OutbreakReport.published_at).desc().nullslast())
+    )
+    return [
+        DiseaseRecord(
+            disease_label=label,
+            pathogen_key=pathogen_key,
+            country_count=countries,
+            report_count=reports,
+            latest_published_at=published,
+        )
+        for label, pathogen_key, countries, reports, published in rows
+        if label
+    ]
+
+
+def diseases_by_country(session: Session) -> dict[str, list[str]]:
+    """Grounded disease names reported for each country."""
+    rows = session.execute(
+        select(OutbreakObservation.country_iso3, OutbreakReport.disease_label)
+        .join(OutbreakReport, OutbreakObservation.report_id == OutbreakReport.id)
+        .where(*_feeds_model(), OutbreakReport.disease_label.is_not(None))
+        .distinct()
+    )
+    grouped: dict[str, list[str]] = {}
+    for iso3, label in rows:
+        if not label:
+            continue
+        names = grouped.setdefault(iso3, [])
+        if label not in names:
+            names.append(label)
+    return grouped
+
+
+def pathogen_key_for_disease(session: Session, disease_label: str) -> str | None:
+    return session.scalar(
+        select(OutbreakReport.pathogen_key)
+        .where(
+            func.lower(OutbreakReport.disease_label) == disease_label.casefold(),
+            OutbreakReport.pathogen_key.is_not(None),
+        )
+        .order_by(OutbreakReport.published_at.desc().nullslast())
+        .limit(1)
+    )
+
+
+def latest_disease_label(
+    session: Session, pathogen_key: str | None, *, country_iso3: str | None = None
+) -> str | None:
+    statement = (
+        select(OutbreakReport.disease_label)
+        .where(OutbreakReport.disease_label.is_not(None))
+        .order_by(OutbreakReport.published_at.desc().nullslast())
+        .limit(1)
+    )
+    if pathogen_key:
+        statement = statement.where(OutbreakReport.pathogen_key == pathogen_key)
+    if country_iso3:
+        statement = statement.where(
+            OutbreakReport.id.in_(
+                select(OutbreakObservation.report_id).where(
+                    OutbreakObservation.country_iso3 == country_iso3.upper()
+                )
+            )
+        )
+    return session.scalar(statement)
 
 
 def observation_counts(session: Session) -> dict[str, int]:

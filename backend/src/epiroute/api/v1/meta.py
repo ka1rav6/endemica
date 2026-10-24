@@ -8,6 +8,7 @@ from epiroute.api.deps import DbSession
 from epiroute.epidemiology.profiles import PROFILES
 from epiroute.schemas.errors import ErrorResponse
 from epiroute.schemas.outbreak import (
+    DiseaseOut,
     GravityModelOut,
     IngestionRunOut,
     SourceListResponse,
@@ -25,6 +26,15 @@ router = APIRouter(tags=["metadata"])
 )
 def list_sources(session: DbSession) -> SourceListResponse:
     return service.list_sources(session)
+
+
+@router.get(
+    "/diseases",
+    response_model=list[DiseaseOut],
+    summary="Diseases with at least one grounded case count",
+)
+def list_diseases(session: DbSession) -> list[DiseaseOut]:
+    return service.list_diseases(session)
 
 
 @router.get(

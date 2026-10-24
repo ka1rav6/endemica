@@ -14,6 +14,7 @@ from epiroute.schemas.common import ExtractionStatus, Provenance
 from epiroute.schemas.outbreak import (
     CountryListResponse,
     CountryOut,
+    DiseaseOut,
     GravityModelOut,
     GroundingFieldOut,
     IngestionRunOut,
@@ -166,6 +167,7 @@ def get_outbreak(session: Session, report_id: str) -> OutbreakReportDetail:
 def list_countries(session: Session) -> CountryListResponse:
     countries = reference_repo.list_countries(session)
     with_outbreaks = set(repo.countries_with_active_outbreaks(session))
+    diseases = repo.diseases_by_country(session)
     items = [
         CountryOut(
             iso3=c.iso3,
@@ -178,10 +180,24 @@ def list_countries(session: Session) -> CountryListResponse:
             centroid_lat=c.centroid_lat,
             centroid_lon=c.centroid_lon,
             has_reported_outbreak=c.iso3 in with_outbreaks,
+            diseases=diseases.get(c.iso3, []),
         )
         for c in countries
     ]
     return CountryListResponse(total=len(items), items=items)
+
+
+def list_diseases(session: Session) -> list[DiseaseOut]:
+    return [
+        DiseaseOut(
+            disease_label=record.disease_label,
+            pathogen_key=record.pathogen_key,
+            country_count=record.country_count,
+            report_count=record.report_count,
+            latest_published_at=record.latest_published_at,
+        )
+        for record in repo.list_diseases(session)
+    ]
 
 
 def list_routes(

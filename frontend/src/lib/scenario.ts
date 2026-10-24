@@ -2,6 +2,7 @@ import type { RiskParams } from '@/types/api';
 
 export interface ScenarioState {
   pathogen: string | null;
+  disease: string | null;
   horizonDays: number;
   sigma: number;
   passengerScale: number;
@@ -16,6 +17,7 @@ export interface ScenarioState {
 
 export const DEFAULT_SCENARIO: ScenarioState = {
   pathogen: null,
+  disease: null,
   horizonDays: 14,
   sigma: 0,
   passengerScale: 1,
@@ -31,6 +33,7 @@ export const DEFAULT_SCENARIO: ScenarioState = {
 export function toRiskParams(state: ScenarioState): RiskParams {
   return {
     pathogen: state.pathogen ?? undefined,
+    disease: state.disease ?? undefined,
     horizon_days: state.horizonDays,
     sigma: state.sigma,
     passenger_scale: state.passengerScale,

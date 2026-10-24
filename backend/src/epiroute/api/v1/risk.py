@@ -42,6 +42,9 @@ def get_risk(
     session: DbSession,
     destination_iso3: Annotated[str, PathParam(min_length=3, max_length=3)],
     pathogen: Annotated[str | None, Query(description="Pathogen profile key.")] = None,
+    disease: Annotated[
+        str | None, Query(description="Disease name as written on the source report.")
+    ] = None,
     horizon_days: Annotated[float, Query(ge=1, le=365)] = 14.0,
     underreporting_low: Annotated[float, Query(ge=1, le=100)] = 2.0,
     underreporting_central: Annotated[float, Query(ge=1, le=100)] = 4.0,
@@ -56,6 +59,7 @@ def get_risk(
 ) -> RiskResponse:
     query = RiskQuery(
         pathogen_key=pathogen,
+        disease_label=disease,
         horizon_days=horizon_days,
         underreporting_low=underreporting_low,
         underreporting_central=underreporting_central,

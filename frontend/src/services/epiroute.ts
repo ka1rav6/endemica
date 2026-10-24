@@ -4,6 +4,7 @@ import type {
   GravityModel,
   HealthResponse,
   IngestionRun,
+  DiseaseOption,
   OutbreakListResponse,
   OutbreakReportDetail,
   PathogenSummary,
@@ -53,6 +54,9 @@ export const getRisk = (
 
 export const getSources = (signal?: AbortSignal): Promise<SourceListResponse> =>
   apiGet<SourceListResponse>(`${V1}/sources`, undefined, signal ? { signal } : undefined);
+
+export const getDiseases = (signal?: AbortSignal): Promise<DiseaseOption[]> =>
+  apiGet<DiseaseOption[]>(`${V1}/diseases`, undefined, signal ? { signal } : undefined);
 
 export const getPathogens = (signal?: AbortSignal): Promise<PathogenSummary[]> =>
   apiGet<PathogenSummary[]>(`${V1}/pathogens`, undefined, signal ? { signal } : undefined);

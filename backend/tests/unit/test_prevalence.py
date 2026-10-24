@@ -169,8 +169,8 @@ class TestSingleReportFallback:
         assert result.method is PrevalenceMethod.RECENT_WINDOW
         assert result.infectious_cases_central == pytest.approx(400.0)
 
-    def test_unknown_age_is_declined(self) -> None:
-        """A cumulative total with no start date is not a prevalence."""
+    def test_unknown_age_uses_the_active_window(self) -> None:
+        """No start date still yields an estimate, over the 90-day active window."""
         result = estimate_from_single_report(
             1000,
             _days_ago(4),
@@ -180,8 +180,9 @@ class TestSingleReportFallback:
             underreporting=(1.0, 1.0, 1.0),
             as_of=NOW,
         )
-        assert isinstance(result, PrevalenceUnavailable)
-        assert result.reason == "outbreak_age_unknown"
+        assert isinstance(result, PrevalenceEstimate)
+        assert result.infectious_cases_central == pytest.approx(1000 * 7 / 90)
+        assert any("assumed" in caveat for caveat in result.caveats)
 
     def test_outbreak_younger_than_the_infectious_period_has_no_recoveries(self) -> None:
         """The active fraction is floored at 1, never above it."""
@@ -302,7 +303,8 @@ class TestSeriesSelection:
         assert result.method is PrevalenceMethod.INCIDENCE_DIFFERENCE
         assert result.infectious_cases_central == pytest.approx(280.0)
 
-    def test_one_report_without_a_start_date_is_declined(self) -> None:
+    def test_one_report_without_a_start_date_still_estimates(self) -> None:
+        """1000 cases, assumed age 90 days, D = 7, u = 4."""
         result = prevalence_from_series(
             [ReportedCount(_days_ago(4), 1000)],
             population=POP,
@@ -310,8 +312,9 @@ class TestSeriesSelection:
             underreporting=(2.0, 4.0, 10.0),
             as_of=NOW,
         )
-        assert isinstance(result, PrevalenceUnavailable)
-        assert result.reason == "outbreak_age_unknown"
+        assert isinstance(result, PrevalenceEstimate)
+        assert result.method is PrevalenceMethod.RECENT_WINDOW
+        assert result.infectious_cases_central == pytest.approx(1000 * 7 / 90 * 4)
 
     def test_one_report_with_a_stated_start_uses_the_uniform_window(self) -> None:
         """1000 cases over 70 days, 7-day infectious period, u = 4 → 400."""
