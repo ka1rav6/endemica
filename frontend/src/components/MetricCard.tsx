@@ -6,6 +6,8 @@ import { ValueTypeBadge } from '@/components/ValueTypeBadge';
 interface Props {
   question: string;
   band: BandedQuantity;
+  /** Replaces the generic reason when a specific one reads better. */
+  unavailableText?: string;
   detail?: string;
   saturated?: boolean;
   children?: ReactNode;
@@ -31,7 +33,15 @@ function BandBar({ band }: { band: BandedQuantity }) {
   );
 }
 
-export function MetricCard({ question, band, detail, saturated, children, testId }: Props) {
+export function MetricCard({
+  question,
+  band,
+  unavailableText: unavailableOverride,
+  detail,
+  saturated,
+  children,
+  testId,
+}: Props) {
   const unavailable = band.central === null;
   return (
     <section className="metric" data-testid={testId}>
@@ -42,7 +52,7 @@ export function MetricCard({ question, band, detail, saturated, children, testId
 
       {unavailable ? (
         <p className="metric__value metric__value--unknown" data-testid={`${testId ?? ''}-unknown`}>
-          Not estimable — {unavailableText(band.unavailable_reason)}
+          Not estimable — {unavailableOverride ?? unavailableText(band.unavailable_reason)}
         </p>
       ) : (
         <>

@@ -1884,3 +1884,28 @@ button.row[aria-current='true'] {
   font-size: 11px;
   color: var(--ink-4);
 }
+
+.rail__mode {
+  display: grid;
+  gap: 3px;
+  margin: 8px 8px 0;
+  padding: 9px 10px;
+  border-radius: var(--r-sm);
+  background: rgb(255 107 122 / 9%);
+  border: 1px solid rgb(255 107 122 / 24%);
+}
+
+.rail__mode-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11.5px;
+  font-weight: 650;
+  color: #ff97a2;
+}
+
+.rail__mode-note {
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--ink-3);
+}

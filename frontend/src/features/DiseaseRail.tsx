@@ -6,7 +6,11 @@ type Scope = 'all' | 'active' | 'major';
 
 const SCOPES: { id: Scope; label: string; title: string }[] = [
   { id: 'all', label: 'All', title: 'Every disease in the archive' },
-  { id: 'active', label: 'Active', title: 'Reported in the last 180 days' },
+  {
+    id: 'active',
+    label: 'Active',
+    title: 'Combine every currently reported disease into one view',
+  },
   { id: 'major', label: 'Widest', title: 'Reached the most countries' },
 ];
 
@@ -16,6 +20,11 @@ interface Props {
   onSelect: (key: string) => void;
   loading: boolean;
   activeWindowDays: number;
+  /** True while the map and the estimates cover every active disease at once. */
+  activeMode: boolean;
+  onActiveMode: (on: boolean) => void;
+  /** The exact diseases the aggregate covers, so the list cannot disagree. */
+  activeKeys: ReadonlySet<string>;
 }
 
 function year(iso: string | null): string {
@@ -43,7 +52,16 @@ function SpanBar({ disease, from, to }: { disease: DiseaseHistory; from: number;
   );
 }
 
-export function DiseaseRail({ diseases, selectedKey, onSelect, loading, activeWindowDays }: Props) {
+export function DiseaseRail({
+  diseases,
+  selectedKey,
+  onSelect,
+  loading,
+  activeWindowDays,
+  activeMode,
+  onActiveMode,
+  activeKeys,
+}: Props) {
   const [query, setQuery] = useState('');
   const [scope, setScope] = useState<Scope>('all');
 
@@ -69,14 +87,14 @@ export function DiseaseRail({ diseases, selectedKey, onSelect, loading, activeWi
           disease.source_labels.some((label) => label.toLowerCase().includes(needle)),
       );
     }
-    if (scope === 'active') {
-      list = list.filter((disease) => isActive(disease, activeWindowDays));
+    if (scope === 'active' || activeMode) {
+      list = list.filter((disease) => activeKeys.has(disease.disease_key));
     }
     if (scope === 'major') {
       list = [...list].sort((a, b) => b.country_count - a.country_count);
     }
     return list;
-  }, [diseases, query, scope, activeWindowDays]);
+  }, [diseases, query, scope, activeMode, activeKeys]);
 
   return (
     <aside className="rail" aria-label="Diseases">
@@ -113,9 +131,16 @@ export function DiseaseRail({ diseases, selectedKey, onSelect, loading, activeWi
             key={entry.id}
             type="button"
             className="segment"
-            aria-pressed={scope === entry.id}
+            aria-pressed={entry.id === 'active' ? activeMode : scope === entry.id && !activeMode}
             title={entry.title}
             onClick={() => {
+              if (entry.id === 'active') {
+                const next = !activeMode;
+                onActiveMode(next);
+                setScope(next ? 'active' : 'all');
+                return;
+              }
+              onActiveMode(false);
               setScope(entry.id);
             }}
           >
@@ -123,6 +148,20 @@ export function DiseaseRail({ diseases, selectedKey, onSelect, loading, activeWi
           </button>
         ))}
       </div>
+
+      {activeMode && (
+        <div className="rail__mode">
+          <span className="rail__mode-title">
+            <span className="dot dot--pulse" style={{ color: 'var(--hot)' }} aria-hidden="true" />
+            All active diseases
+          </span>
+          <span className="rail__mode-note">
+            The map and every estimate cover {activeKeys.size} disease
+            {activeKeys.size === 1 ? '' : 's'} reported in the last {activeWindowDays} days at
+            once. Pick one below to narrow it.
+          </span>
+        </div>
+      )}
 
       <div className="rail__list">
         {visible.length === 0 && (
@@ -137,7 +176,7 @@ export function DiseaseRail({ diseases, selectedKey, onSelect, loading, activeWi
               key={disease.disease_key}
               type="button"
               className="dcard"
-              aria-current={disease.disease_key === selectedKey}
+              aria-current={!activeMode && disease.disease_key === selectedKey}
               onClick={() => {
                 onSelect(disease.disease_key);
               }}

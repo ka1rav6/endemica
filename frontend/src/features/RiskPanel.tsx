@@ -126,6 +126,7 @@ function OriginRow({ origin }: { origin: OriginContribution }) {
 
 export function RiskPanel({ risk }: { risk: RiskResponse }) {
   const { importation, establishment, pathogen } = risk;
+  const aggregate = pathogen.scope === 'active';
 
   return (
     <>
@@ -147,7 +148,11 @@ export function RiskPanel({ risk }: { risk: RiskResponse }) {
         <PresenceCard risk={risk} />
 
         <MetricCard
-          question={`Will an infected traveller arrive within ${risk.horizon_days} days?`}
+          question={
+            aggregate
+              ? `Will a traveller infected with any active disease arrive within ${risk.horizon_days} days?`
+              : `Will an infected traveller arrive within ${risk.horizon_days} days?`
+          }
           band={importation.probability}
           saturated={importation.is_saturated}
           testId="importation-card"
@@ -161,6 +166,9 @@ export function RiskPanel({ risk }: { risk: RiskResponse }) {
         <MetricCard
           question={`Will sustained local transmission begin within ${risk.horizon_days} days?`}
           band={establishment.probability_within_horizon}
+          {...(aggregate
+            ? { unavailableText: 'not reported across several diseases at once' }
+            : {})}
           detail={establishment.detail}
           testId="establishment-card"
         >

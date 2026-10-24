@@ -43,6 +43,7 @@ interface Props {
   onSelect: (iso3: string, additive: boolean) => void;
   spread: MapSpreadEntry[];
   diseaseName: string | null;
+  activeMode?: boolean;
   yearCeiling: number | null;
   origins: OriginContribution[];
   routes: Route[];
@@ -80,7 +81,11 @@ function arcFeatures(
         passengers: route.passengers_per_day,
         valueType: route.value_type,
         source: route.source,
-        width: 1.1 + share * 4.2,
+        disease: contribution?.disease_name ?? null,
+        // A corridor that no reporting country feeds is drawn thin and faint:
+        // it is travel volume only, not a route anything is arriving on.
+        carries: contribution ? 1 : 0,
+        width: contribution ? 1.4 + share * 4.2 : 0.9,
       },
       geometry: {
         type: 'LineString',
@@ -188,9 +193,23 @@ function routePopup(properties: Record<string, unknown>): HTMLElement {
       'div',
       `${formatPassengers(Number(properties['passengers']))} · ${String(properties['valueType'])}`,
     ),
-    node('div', `source: ${String(properties['source'])}`, {
-      color: '#74889e',
-      fontSize: '10.5px',
+  );
+  const disease = properties['disease'];
+  root.append(
+    node(
+      'div',
+      typeof disease === 'string' && disease
+        ? `carries ${disease} risk`
+        : 'travel volume only — no reported outbreak at this origin',
+      {
+        color: Number(properties['carries']) === 1 ? '#2ee6c0' : '#74889e',
+        fontSize: '10.5px',
+        marginTop: '2px',
+      },
+    ),
+    node(`div`, `source: ${String(properties['source'])}`, {
+      color: '#4f6377',
+      fontSize: '10px',
     }),
   );
   return root;
@@ -230,6 +249,7 @@ export function WorldMap({
   onSelect,
   spread,
   diseaseName,
+  activeMode = false,
   yearCeiling,
   origins,
   routes,
@@ -273,6 +293,7 @@ export function WorldMap({
       canvasContextAttributes: { antialias: true },
     });
     mapRef.current = map;
+    (window as unknown as Record<string, unknown>)['__map'] = map;
 
     map.addControl(
       new NavigationControl({ showCompass: false, visualizePitch: false }),
@@ -409,7 +430,12 @@ export function WorldMap({
                 C.arcEstimated,
               ] as ExpressionSpecification,
               'line-width': ['*', ['get', 'width'], 3.2] as ExpressionSpecification,
-              'line-opacity': 0.22,
+              'line-opacity': [
+                'case',
+                ['==', ['get', 'carries'], 1],
+                0.24,
+                0,
+              ] as ExpressionSpecification,
               'line-blur': 5,
             },
           });
@@ -422,7 +448,12 @@ export function WorldMap({
             paint: {
               'line-color': C.arcObserved,
               'line-width': ['get', 'width'] as ExpressionSpecification,
-              'line-opacity': 0.9,
+              'line-opacity': [
+                'case',
+                ['==', ['get', 'carries'], 1],
+                0.92,
+                0.32,
+              ] as ExpressionSpecification,
             },
           });
           map.addLayer({
@@ -434,7 +465,12 @@ export function WorldMap({
             paint: {
               'line-color': C.arcEstimated,
               'line-width': ['get', 'width'] as ExpressionSpecification,
-              'line-opacity': 0.82,
+              'line-opacity': [
+                'case',
+                ['==', ['get', 'carries'], 1],
+                0.85,
+                0.3,
+              ] as ExpressionSpecification,
               'line-dasharray': [0.6, 1.2],
             },
           });
@@ -519,7 +555,9 @@ export function WorldMap({
               root.append(
                 node(
                   'div',
-                  `${diseaseRef.current ?? 'Reported'} · arrived ${entry.firstYear ?? 'unknown'} (#${entry.arrivalOrder})`,
+                  entry.diseaseNames
+                    ? entry.diseaseNames.join(', ')
+                    : `${diseaseRef.current ?? 'Reported'} · arrived ${entry.firstYear ?? 'unknown'} (#${entry.arrivalOrder})`,
                   { color: '#2ee6c0', fontSize: '11px', marginTop: '2px' },
                 ),
                 node(
@@ -642,8 +680,14 @@ export function WorldMap({
     const pin = map.getSource('pin');
     if (pin instanceof GeoJSONSource) void pin.setData(pointFor(selected));
     const order = map.getSource('order');
-    if (order instanceof GeoJSONSource) void order.setData(markerFeatures(countries, spread, 25));
-  }, [ready, countries, spread, selected]);
+    if (order instanceof GeoJSONSource) {
+      void order.setData(
+        activeMode
+          ? { type: 'FeatureCollection', features: [] }
+          : markerFeatures(countries, spread, 25),
+      );
+    }
+  }, [ready, countries, spread, selected, activeMode]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -686,8 +730,12 @@ export function WorldMap({
           <span className="hud__kicker">
             {diseaseName ? (
               <>
-                <span className="dot" style={{ color: 'var(--accent)' }} aria-hidden="true" />
-                Spread of
+                <span
+                  className={activeMode ? 'dot dot--pulse' : 'dot'}
+                  style={{ color: activeMode ? 'var(--hot)' : 'var(--accent)' }}
+                  aria-hidden="true"
+                />
+                {activeMode ? 'Currently reported' : 'Spread of'}
               </>
             ) : (
               'No disease selected'
@@ -701,30 +749,38 @@ export function WorldMap({
                 <dd className="num">{spread.length}</dd>
               </div>
               <div className="hud__stat">
-                <dt>First seen</dt>
-                <dd className="num">{firstYear ?? '—'}</dd>
-              </div>
-              <div className="hud__stat">
-                <dt>Showing</dt>
+                <dt>{activeMode ? 'Reports' : 'First seen'}</dt>
                 <dd className="num">
-                  {yearCeiling === null ? 'all years' : <>up to {yearCeiling}</>}
+                  {activeMode
+                    ? spread.reduce((total, entry) => total + entry.reportCount, 0)
+                    : (firstYear ?? '—')}
                 </dd>
               </div>
+              {!activeMode && (
+                <div className="hud__stat">
+                  <dt>Showing</dt>
+                  <dd className="num">
+                    {yearCeiling === null ? 'all years' : <>up to {yearCeiling}</>}
+                  </dd>
+                </div>
+              )}
             </dl>
           )}
         </div>
 
         {spread.length > 0 && (
           <div className="hud legend">
-            <span className="legend__title">Order of arrival</span>
+            <span className="legend__title">
+              {activeMode ? 'Diseases reported' : 'Order of arrival'}
+            </span>
             <span className="legend__ramp" aria-hidden="true">
               {C.ramp.map((colour) => (
                 <i key={colour} style={{ background: colour }} />
               ))}
             </span>
             <span className="legend__scale">
-              <span>first</span>
-              <span>latest</span>
+              <span>{activeMode ? 'most' : 'first'}</span>
+              <span>{activeMode ? 'one' : 'latest'}</span>
             </span>
             {showFlows && (
               <>
@@ -736,6 +792,13 @@ export function WorldMap({
                   <span className="swatch swatch--line" style={{ background: C.arcEstimated }} />
                   Modelled flow
                 </span>
+                <span className="legend__row">
+                  <span
+                    className="swatch swatch--line"
+                    style={{ background: C.arcEstimated, opacity: 0.3 }}
+                  />
+                  Travel only, no outbreak
+                </span>
               </>
             )}
           </div>
@@ -743,9 +806,11 @@ export function WorldMap({
       </div>
 
       <div className="hud map__hint">
-        {spread.length > 0
-          ? 'Numbers mark the order countries first reported this disease. Click a country for its record, shift-click to compare two.'
-          : 'Click any country to see every disease ever reported there. Shift-click a second one to compare.'}
+        {activeMode
+          ? 'Every country with a report in the last 90 days, shaded by how many diseases. Click one for its record.'
+          : spread.length > 0
+            ? 'Numbers mark the order countries first reported this disease. Click a country for its record, shift-click to compare two.'
+            : 'Click any country to see every disease ever reported there. Shift-click a second one to compare.'}
       </div>
     </div>
   );

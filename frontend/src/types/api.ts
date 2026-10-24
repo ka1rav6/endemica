@@ -177,6 +177,8 @@ export interface LocalPresence {
 export interface OriginContribution {
   origin_iso3: string;
   origin_name: string;
+  disease_key?: string | null;
+  disease_name?: string | null;
   arrival_rate_per_day: number;
   share_of_total: number;
   passengers_per_day: number;
@@ -234,6 +236,9 @@ export interface DiseaseOption {
 export interface PathogenSummary {
   key: string | null;
   label: string;
+  scope?: string;
+  active_disease_count?: number | null;
+  active_diseases?: string[];
   disease_key?: string | null;
   disease_name?: string | null;
   disease_label?: string | null;
@@ -341,6 +346,7 @@ export interface RiskParams {
   pathogen?: string | undefined;
   disease?: string | undefined;
   disease_key?: string | undefined;
+  scope?: string | undefined;
   horizon_days?: number;
   underreporting_low?: number;
   underreporting_central?: number;
@@ -440,4 +446,40 @@ export interface CountryProfile {
   report_count: number;
   active_disease_count: number;
   diseases: CountryDisease[];
+}
+
+export interface ActiveDisease {
+  disease_key: string;
+  disease_name: string;
+  pathogen_key: string | null;
+  country_count: number;
+  report_count: number;
+  last_published_at: string | null;
+}
+
+export interface ActiveCountry {
+  country_iso3: string;
+  country_name: string;
+  centroid_lat: number | null;
+  centroid_lon: number | null;
+  disease_count: number;
+  report_count: number;
+  cases_confirmed: number | null;
+  deaths: number | null;
+  last_published_at: string | null;
+  disease_keys: string[];
+  disease_names: string[];
+}
+
+export interface ActiveSummary {
+  window_days: number;
+  since: string;
+  disease_count: number;
+  country_count: number;
+  report_count: number;
+  cases_confirmed: number | null;
+  deaths: number | null;
+  diseases: ActiveDisease[];
+  countries: ActiveCountry[];
+  note: string;
 }

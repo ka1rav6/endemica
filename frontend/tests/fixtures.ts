@@ -1,4 +1,5 @@
 import type {
+  ActiveSummary,
   Country,
   CountryProfile,
   DiseaseHistory,
@@ -505,3 +506,39 @@ export function countryProfile(iso3 = 'ZZO'): CountryProfile {
       : [],
   };
 }
+
+export const activeSummary: ActiveSummary = {
+  window_days: 90,
+  since: new Date(Date.now() - 90 * 86_400_000).toISOString(),
+  disease_count: 1,
+  country_count: 1,
+  report_count: 10,
+  cases_confirmed: 2400,
+  deaths: 110,
+  diseases: [
+    {
+      disease_key: 'test_resp',
+      disease_name: 'Test respiratory disease',
+      pathogen_key: 'respiratory_default',
+      country_count: 1,
+      report_count: 10,
+      last_published_at: new Date().toISOString(),
+    },
+  ],
+  countries: [
+    {
+      country_iso3: 'ZZO',
+      country_name: 'Origin Land',
+      centroid_lat: 0,
+      centroid_lon: 10,
+      disease_count: 1,
+      report_count: 10,
+      cases_confirmed: 2400,
+      deaths: 110,
+      last_published_at: new Date().toISOString(),
+      disease_keys: ['test_resp'],
+      disease_names: ['Test respiratory disease'],
+    },
+  ],
+  note: 'Active means a grounded report published in the last 90 days.',
+};

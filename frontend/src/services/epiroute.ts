@@ -1,5 +1,6 @@
 import { apiGet, apiPost } from '@/services/client';
 import type {
+  ActiveSummary,
   CountryListResponse,
   CountryProfile,
   DiseaseHistory,
@@ -106,3 +107,6 @@ export const getCountryProfile = (iso3: string, signal?: AbortSignal): Promise<C
     undefined,
     signal ? { signal } : undefined,
   );
+
+export const getActiveSummary = (signal?: AbortSignal): Promise<ActiveSummary> =>
+  apiGet<ActiveSummary>(`${V1}/diseases/active`, undefined, signal ? { signal } : undefined);

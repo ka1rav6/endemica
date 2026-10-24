@@ -14,9 +14,10 @@ import { WorldMap } from '@/features/WorldMap';
 import { useAsync, useDebounced } from '@/hooks/useAsync';
 import { formatCount, isStale, relativeAge } from '@/lib/format';
 import { DEFAULT_SCENARIO, type ScenarioState, toRiskParams } from '@/lib/scenario';
-import { spreadEntries } from '@/lib/spread';
+import { activeCountryEntries, spreadEntries } from '@/lib/spread';
 import {
   getCountries,
+  getActiveSummary,
   getCountryProfile,
   getDiseaseHistory,
   getDiseaseSpread,
@@ -44,12 +45,13 @@ const TABS: { id: Tab; label: string }[] = [
 ];
 
 const MAX_DATA_AGE_DAYS = 7;
-const ACTIVE_WINDOW_DAYS = 180;
+const ACTIVE_WINDOW_DAYS = 90;
 
 export default function App() {
   const [selectedIso3, setSelectedIso3] = useState<string | null>(null);
   const [comparisonIso3, setComparisonIso3] = useState<string | null>(null);
   const [diseaseKey, setDiseaseKey] = useState<string | null>(null);
+  const [activeMode, setActiveMode] = useState(false);
   const [yearCeiling, setYearCeiling] = useState<number | null>(null);
   const [playing, setPlaying] = useState(false);
   const [showFlows, setShowFlows] = useState(false);
@@ -69,6 +71,7 @@ export default function App() {
   const gravity = useAsync((signal) => getGravityModel(signal).catch(() => null), [dataNonce]);
   const runs = useAsync((signal) => getRuns(10, signal), [dataNonce]);
   const sources = useAsync((signal) => getSources(signal), [dataNonce]);
+  const active = useAsync((signal) => getActiveSummary(signal), [dataNonce]);
 
   const spread = useAsync(
     (signal) => (diseaseKey ? getDiseaseSpread(diseaseKey, signal) : Promise.resolve(null)),
@@ -87,8 +90,11 @@ export default function App() {
   );
 
   const riskParams = useMemo(
-    () => ({ ...toRiskParams(debouncedScenario), disease_key: diseaseKey ?? undefined }),
-    [debouncedScenario, diseaseKey],
+    () =>
+      activeMode
+        ? { ...toRiskParams(debouncedScenario), scope: 'active' }
+        : { ...toRiskParams(debouncedScenario), disease_key: diseaseKey ?? undefined },
+    [debouncedScenario, diseaseKey, activeMode],
   );
 
   const risk = useAsync(
@@ -149,16 +155,26 @@ export default function App() {
   );
 
   const activeSpread = diseaseKey ? spread.data : followed.data;
-  const timelinePoints = activeSpread?.timeline ?? [];
+  const timelinePoints = activeMode ? [] : (activeSpread?.timeline ?? []);
 
   useEffect(() => {
     setYearCeiling(null);
     setPlaying(false);
   }, [effectiveDiseaseKey]);
 
+  const activeKeys = useMemo(
+    () => new Set((active.data?.diseases ?? []).map((disease) => disease.disease_key)),
+    [active.data],
+  );
+
+  const activeEntries = useMemo(
+    () => activeCountryEntries(active.data?.countries ?? []),
+    [active.data],
+  );
+
   const mapSpread = useMemo(
-    () => spreadEntries(activeSpread?.countries ?? [], yearCeiling),
-    [activeSpread, yearCeiling],
+    () => (activeMode ? activeEntries : spreadEntries(activeSpread?.countries ?? [], yearCeiling)),
+    [activeMode, activeEntries, activeSpread, yearCeiling],
   );
 
   const originIso3 = useMemo(
@@ -166,13 +182,14 @@ export default function App() {
     [activeRisk],
   );
 
-  const relevantRoutes = useMemo(
-    () =>
-      (routes.data?.items ?? []).filter(
-        (route) => route.dest_iso3 === selectedIso3 && originIso3.has(route.origin_iso3),
-      ),
-    [routes.data, originIso3, selectedIso3],
-  );
+  // Corridors that carry risk are the point, but a destination with no usable
+  // origin would otherwise draw nothing at all, so fall back to its busiest
+  // inbound routes. The map marks which ones currently carry a disease.
+  const relevantRoutes = useMemo(() => {
+    const inbound = (routes.data?.items ?? []).filter((route) => route.dest_iso3 === selectedIso3);
+    const carrying = inbound.filter((route) => originIso3.has(route.origin_iso3));
+    return carrying.length > 0 ? carrying : inbound.slice(0, 12);
+  }, [routes.data, originIso3, selectedIso3]);
 
   const handleCountryClick = useCallback((iso3: string, additive: boolean) => {
     if (additive) {
@@ -236,10 +253,17 @@ export default function App() {
           diseases={diseaseList}
           selectedKey={effectiveDiseaseKey}
           onSelect={(key) => {
+            setActiveMode(false);
             setDiseaseKey(key === diseaseKey ? null : key);
           }}
           loading={diseases.loading}
-          activeWindowDays={ACTIVE_WINDOW_DAYS}
+          activeWindowDays={active.data?.window_days ?? ACTIVE_WINDOW_DAYS}
+          activeMode={activeMode}
+          onActiveMode={(on) => {
+            setActiveMode(on);
+            if (on) setDiseaseKey(null);
+          }}
+          activeKeys={activeKeys}
         />
 
         <div className="app__stage">
@@ -249,8 +273,13 @@ export default function App() {
             comparisonIso3={comparisonIso3}
             onSelect={handleCountryClick}
             spread={mapSpread}
-            diseaseName={effectiveDiseaseName}
-            yearCeiling={yearCeiling}
+            diseaseName={
+              activeMode
+                ? `${active.data?.disease_count ?? 0} active diseases`
+                : effectiveDiseaseName
+            }
+            activeMode={activeMode}
+            yearCeiling={activeMode ? null : yearCeiling}
             origins={activeRisk?.importation.top_origins ?? []}
             routes={relevantRoutes}
             showFlows={showFlows}
