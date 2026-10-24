@@ -356,6 +356,54 @@ def cmd_ingest(args: argparse.Namespace) -> int:
     return 0 if summary.status == "succeeded" else 1
 
 
+def cmd_data_archive(args: argparse.Namespace) -> int:
+    import json
+
+    from epiroute.ingestion.who_don import fetch_full_archive
+
+    settings = get_settings()
+    _print_header("Downloading the full WHO Disease Outbreak News archive")
+    payload = fetch_full_archive(settings=settings, max_pages=args.max_pages)
+    items = payload["value"]
+    target = settings.raw_data_dir / "who_don_archive.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(payload), encoding="utf-8")
+    dates = sorted(
+        str(i.get("PublicationDate") or "")[:10] for i in items if i.get("PublicationDate")
+    )
+    print(f"  records: {len(items)}")
+    if dates:
+        print(f"  range:   {dates[0]} to {dates[-1]}")
+    print(f"  written: {target}")
+    return 0 if items else 1
+
+
+def cmd_ingest_archive(args: argparse.Namespace) -> int:
+    from epiroute.db.session import session_scope
+    from epiroute.ingestion.pipeline import ingest_records
+    from epiroute.ingestion.who_don import load_archive
+
+    settings = get_settings()
+    path = settings.raw_data_dir / "who_don_archive.json"
+    if not path.exists():
+        print(f"  {BAD} {path} is missing; run `epiroute data-archive` first", file=sys.stderr)
+        return 1
+
+    _print_header("Ingesting the local WHO DON archive")
+    records = load_archive(path, settings=settings, limit=args.limit)
+    print(f"  records on disk: {len(records)}")
+    with session_scope() as session:
+        summary = ingest_records(
+            session, records, settings=settings, client=None, use_agent=False, trigger="manual"
+        )
+    print(f"  records created:      {summary.records_created}")
+    print(f"  records updated:      {summary.records_updated}")
+    print(f"  records skipped:      {summary.records_skipped}")
+    print(f"  observations stored:  {summary.observations_created}")
+    print(f"  of which unverified:  {summary.observations_unverified}")
+    return 0
+
+
 def cmd_api_check(args: argparse.Namespace) -> int:
     import httpx
 
@@ -482,6 +530,18 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-agent", action="store_true", help="Skip TinyFish Agent extraction.")
     p.add_argument("--trigger", default="manual", choices=["manual", "webhook", "scheduled"])
     p.set_defaults(func=cmd_ingest)
+
+    p = subparsers.add_parser(
+        "data-archive", help="Download every page of the WHO Disease Outbreak News archive."
+    )
+    p.add_argument("--max-pages", type=int, default=200)
+    p.set_defaults(func=cmd_data_archive)
+
+    p = subparsers.add_parser(
+        "ingest-archive", help="Ingest the locally stored WHO DON archive without network calls."
+    )
+    p.add_argument("--limit", type=int, default=None, help="Maximum records to ingest.")
+    p.set_defaults(func=cmd_ingest_archive)
 
     p = subparsers.add_parser("api-check", help="Smoke-check a running API.")
     p.add_argument("--base-url", default="http://127.0.0.1:8000")

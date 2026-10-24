@@ -238,6 +238,17 @@ class OutbreakReport(Base, TimestampMixin):
         index=True,
         comment="EpiRoute pathogen profile key this report maps to, or NULL if unmapped.",
     )
+    disease_key: Mapped[str | None] = mapped_column(
+        String(64),
+        index=True,
+        comment="Canonical disease key, so wording variants group into one disease.",
+    )
+    disease_name: Mapped[str | None] = mapped_column(
+        String(128), index=True, comment="Canonical display name for disease_key."
+    )
+    disease_family: Mapped[str | None] = mapped_column(
+        String(64), index=True, comment="Broad grouping, e.g. 'Viral haemorrhagic fever'."
+    )
     summary_text: Mapped[str | None] = mapped_column(Text)
     narrative_text: Mapped[str | None] = mapped_column(
         Text,

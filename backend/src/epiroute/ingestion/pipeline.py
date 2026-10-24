@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from epiroute.core.clock import utc_now
 from epiroute.core.config import Settings, get_settings
 from epiroute.core.errors import EpiRouteError
-from epiroute.datasets.iso import first_country
+from epiroute.datasets.iso import find_countries, first_country
 from epiroute.db.models import Country, IngestionRun, OutbreakObservation, OutbreakReport
 from epiroute.ingestion.extraction import (
     ExtractionOutcome,
@@ -21,7 +21,7 @@ from epiroute.ingestion.extraction import (
 )
 from epiroute.ingestion.validate import validate_extraction
 from epiroute.ingestion.who_don import LICENSE_NOTE, SOURCE_NAME, DonRecord, iter_recent_records
-from epiroute.schemas.common import ExtractionStatus
+from epiroute.schemas.common import ExtractionStatus, ValueType
 from epiroute.tinyfish.client import TinyFishClient, build_client_or_none
 
 logger = logging.getLogger(__name__)
@@ -56,6 +56,28 @@ def _known_countries(session: Session) -> set[str]:
     return set(session.scalars(select(Country.iso3)).all())
 
 
+_MAX_LOCATION_ONLY = 12
+
+
+def _location_only_rows(
+    record: DonRecord, usable: list[object], known: set[str]
+) -> list[str]:
+    """Countries named in the title that no grounded observation already covers.
+
+    These rows carry no numbers. They exist so a report still places the
+    outbreak on the map when the parser found no count it could ground.
+    """
+    already = {getattr(o, "country_iso3", None) for o in usable}
+    found = find_countries(record.title)
+    if not found:
+        found = find_countries(record.summary_text or "")[:1]
+    out: list[str] = []
+    for iso3 in found[:_MAX_LOCATION_ONLY]:
+        if iso3 in known and iso3 not in already and iso3 not in out:
+            out.append(iso3)
+    return out
+
+
 def _upsert_report(
     session: Session,
     record: DonRecord,
@@ -81,6 +103,9 @@ def _upsert_report(
     report.license_note = LICENSE_NOTE
     report.title = record.title
     report.disease_label = record.disease_label
+    report.disease_key = record.disease_key
+    report.disease_name = record.disease_name
+    report.disease_family = record.disease_family
     report.pathogen_key = record.pathogen_key
     report.summary_text = record.summary_text
     report.narrative_text = outcome.source_text
@@ -154,6 +179,7 @@ def ingest_records(
                 fallback_iso3=first_country(record.title),
             )
             usable = [o for o in validation.observations if o.country_iso3 in known]
+            location_only = _location_only_rows(record, usable, known)
             dropped = len(validation.observations) - len(usable)
             if dropped:
                 validation.warnings.append(
@@ -191,6 +217,18 @@ def ingest_records(
             session.query(OutbreakObservation).filter(
                 OutbreakObservation.report_id == report.id
             ).delete(synchronize_session=False)
+
+            for iso3 in location_only:
+                session.add(
+                    OutbreakObservation(
+                        report_id=report.id,
+                        country_iso3=iso3,
+                        country_name_as_reported=None,
+                        evidence_text=record.title,
+                        grounding_status=ExtractionStatus.NOT_ATTEMPTED,
+                        value_type=ValueType.UNKNOWN,
+                    )
+                )
 
             for observation in usable:
                 session.add(

@@ -13,6 +13,7 @@ from epiroute.core.clock import as_utc, utc_now
 from epiroute.core.config import Settings, get_settings
 from epiroute.core.errors import ExternalServiceError
 from epiroute.core.http import build_client, request_with_retry
+from epiroute.epidemiology import diseases as disease_catalog
 from epiroute.epidemiology.profiles import match_profile_key
 from epiroute.ingestion.html_text import html_to_text, join_sections
 
@@ -33,6 +34,9 @@ class DonRecord:
     published_at: datetime | None
     retrieved_at: datetime
     disease_label: str | None
+    disease_key: str
+    disease_name: str
+    disease_family: str
     pathogen_key: str | None
     summary_text: str
     narrative_text: str
@@ -55,14 +59,7 @@ def _parse_timestamp(value: object) -> datetime | None:
 
 
 def disease_label_from_title(title: str) -> str | None:
-    if not title:
-        return None
-    for separator in ("–", "—", " - ", ","):
-        if separator in title:
-            head = title.split(separator, 1)[0].strip()
-            if head:
-                return head
-    return title.strip() or None
+    return disease_catalog.extract_label(title)
 
 
 def _identifier(item: dict[str, Any]) -> str | None:
@@ -94,7 +91,7 @@ def parse_don_item(
     summary = html_to_text(str(item.get("Summary") or "")) or html_to_text(
         str(item.get("Overview") or "")
     )
-    label = disease_label_from_title(title)
+    disease_key, disease_name, disease_family, label = disease_catalog.resolve(title)
 
     return DonRecord(
         source_identifier=identifier,
@@ -105,7 +102,12 @@ def parse_don_item(
         or _parse_timestamp(item.get("PublicationDate")),
         retrieved_at=retrieved_at,
         disease_label=label,
-        pathogen_key=match_profile_key(label) or match_profile_key(title),
+        disease_key=disease_key,
+        disease_name=disease_name,
+        disease_family=disease_family,
+        pathogen_key=match_profile_key(disease_name)
+        or match_profile_key(label)
+        or match_profile_key(title),
         summary_text=summary[:4000],
         narrative_text=narrative,
         content_sha256=hashlib.sha256(narrative.encode("utf-8")).hexdigest(),
@@ -182,3 +184,53 @@ def load_archive(
             break
     records.sort(key=lambda r: r.published_at or utc_now(), reverse=True)
     return records
+
+
+_ARCHIVE_PAGE_SIZE = 100
+
+
+def fetch_full_archive(
+    *,
+    settings: Settings | None = None,
+    page_size: int = _ARCHIVE_PAGE_SIZE,
+    max_pages: int = 200,
+) -> dict[str, Any]:
+    settings = settings or get_settings()
+    seen: set[str] = set()
+    items: list[dict[str, Any]] = []
+    skip = 0
+
+    with build_client(settings) as client:
+        for _ in range(max_pages):
+            params = {
+                "$orderby": "PublicationDateAndTime desc",
+                "$top": str(page_size),
+                "$skip": str(skip),
+            }
+            response = request_with_retry(
+                client, "GET", settings.who_don_api_url, service=_SERVICE, params=params
+            )
+            if response.status_code != 200:
+                msg = f"HTTP {response.status_code}"
+                raise ExternalServiceError(_SERVICE, msg, status_code=response.status_code)
+            batch = response.json().get("value")
+            if not isinstance(batch, list) or not batch:
+                break
+
+            fresh = 0
+            for item in batch:
+                if not isinstance(item, dict):
+                    continue
+                key = _identifier(item) or str(item.get("Id") or "")
+                if not key or key in seen:
+                    continue
+                seen.add(key)
+                items.append(item)
+                fresh += 1
+
+            skip += len(batch)
+            if fresh == 0:
+                break
+            logger.info("fetched DON page", extra={"skip": skip, "items": len(items)})
+
+    return {"source": settings.who_don_api_url, "retrieved_at": utc_now().isoformat(), "value": items}
