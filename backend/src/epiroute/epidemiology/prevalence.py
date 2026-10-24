@@ -544,8 +544,7 @@ def prevalence_from_series(
         return PrevalenceUnavailable(
             reason="report_after_as_of",
             detail=(
-                "Every report for this origin was published after the time this "
-                "estimate describes."
+                "Every report for this origin was published after the time this estimate describes."
             ),
         )
 

@@ -201,7 +201,7 @@ def fit_gravity_model(
     train_index = np.array(
         [i for pair, rows in pair_groups.items() if pair not in test_pairs for i in rows]
     )
-    n_test = int(len(test_index))
+    n_test = len(test_index)
 
     solution, *_ = np.linalg.lstsq(design[train_index], target[train_index], rcond=None)
 

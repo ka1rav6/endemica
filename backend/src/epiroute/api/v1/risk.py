@@ -33,6 +33,7 @@ def get_next_countries(
     )
     return rank_next_countries(session, query, limit=limit)
 
+
 _DESCRIPTION = """
 Returns the three risk quantities for a destination, kept strictly separate:
 

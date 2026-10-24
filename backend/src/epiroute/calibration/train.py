@@ -83,9 +83,7 @@ def train(settings: Settings | None = None) -> Path:
     scored = [fold for fold in folds if not fold.get("skipped")]
     # all([]) is True in Python. A card with only skipped folds has not been tested.
     passed = (
-        len(scored) >= 2
-        and all(bool(fold.get("passed")) for fold in scored)
-        and bool(intercepts)
+        len(scored) >= 2 and all(bool(fold.get("passed")) for fold in scored) and bool(intercepts)
     )
     card = {
         "passed": passed,

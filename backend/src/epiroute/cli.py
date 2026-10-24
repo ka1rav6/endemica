@@ -318,8 +318,7 @@ def cmd_qa_data(_args: argparse.Namespace) -> int:
         failures.append("flows_present: country_flows.parquet is missing")
     if countries.exists():
         failures.extend(
-            f"{item.check}: {item.detail}"
-            for item in check_populations(pd.read_parquet(countries))
+            f"{item.check}: {item.detail}" for item in check_populations(pd.read_parquet(countries))
         )
     if failures:
         for failure in failures:

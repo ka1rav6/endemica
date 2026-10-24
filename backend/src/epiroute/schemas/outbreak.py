@@ -213,7 +213,35 @@ class DiseaseHistoryOut(BaseModel):
     first_published_at: datetime | None = None
     last_published_at: datetime | None = None
     cases_confirmed: int | None = None
+    cases_reported: int | None = Field(
+        default=None,
+        description=(
+            "The widest case figure the source gave, which for cholera and yellow "
+            "fever is usually suspected rather than confirmed cases. The death "
+            "toll was counted over this figure, not over the confirmed one."
+        ),
+    )
     deaths: int | None = None
+    counts_as_of: datetime | None = Field(
+        default=None,
+        description=(
+            "When the counts on this row were current. Both numbers come from one "
+            "bulletin about one episode, so a stale date means the source stopped "
+            "reporting, not that the outbreak stopped."
+        ),
+    )
+    counted_country_count: int = Field(
+        default=0,
+        description="Countries whose own case and death figures could be reconciled.",
+    )
+    unreconciled_country_count: int = Field(
+        default=0,
+        description=(
+            "Countries left out of the totals because the source's death toll was "
+            "larger than every case figure on the same report, so the two were "
+            "counted over different areas."
+        ),
+    )
     source_labels: list[str] = Field(default_factory=list)
 
 
@@ -230,7 +258,24 @@ class CountrySpreadOut(BaseModel):
     first_published_at: datetime | None = None
     last_published_at: datetime | None = None
     cases_confirmed: int | None = None
+    cases_reported: int | None = Field(
+        default=None,
+        description=(
+            "The widest case figure the source gave, which for cholera and yellow "
+            "fever is usually suspected rather than confirmed cases. The death "
+            "toll was counted over this figure, not over the confirmed one."
+        ),
+    )
     deaths: int | None = None
+    counts_as_of: datetime | None = Field(
+        default=None,
+        description=(
+            "When the counts on this row were current. Both numbers come from one "
+            "bulletin about one episode, so a stale date means the source stopped "
+            "reporting, not that the outbreak stopped."
+        ),
+    )
+    counts_reconciled: bool = True
     grounded: bool
     report_url: HttpUrl | None = None
     report_title: str | None = None
@@ -264,7 +309,19 @@ class DiseaseSpreadResponse(BaseModel):
     first_published_at: datetime | None = None
     last_published_at: datetime | None = None
     cases_confirmed: int | None = None
+    cases_reported: int | None = None
     deaths: int | None = None
+    counts_as_of: datetime | None = None
+    counted_country_count: int = 0
+    unreconciled_country_count: int = 0
+    coverage_note: str | None = Field(
+        default=None,
+        description=(
+            "Set when the newest figure is much older than the newest report, "
+            "which means the source carried on naming the disease after it "
+            "stopped publishing counts for it."
+        ),
+    )
     is_active: bool
     countries: list[CountrySpreadOut] = Field(default_factory=list)
     timeline: list[DiseaseTimelineOut] = Field(default_factory=list)
@@ -284,7 +341,24 @@ class CountryDiseaseOut(BaseModel):
     first_published_at: datetime | None = None
     last_published_at: datetime | None = None
     cases_confirmed: int | None = None
+    cases_reported: int | None = Field(
+        default=None,
+        description=(
+            "The widest case figure the source gave, which for cholera and yellow "
+            "fever is usually suspected rather than confirmed cases. The death "
+            "toll was counted over this figure, not over the confirmed one."
+        ),
+    )
     deaths: int | None = None
+    counts_as_of: datetime | None = Field(
+        default=None,
+        description=(
+            "When the counts on this row were current. Both numbers come from one "
+            "bulletin about one episode, so a stale date means the source stopped "
+            "reporting, not that the outbreak stopped."
+        ),
+    )
+    counts_reconciled: bool = True
     grounded: bool
     is_active: bool
     report_url: HttpUrl | None = None
@@ -329,6 +403,14 @@ class ActiveCountryOut(BaseModel):
     disease_count: int
     report_count: int
     cases_confirmed: int | None = None
+    cases_reported: int | None = Field(
+        default=None,
+        description=(
+            "The widest case figure the source gave, which for cholera and yellow "
+            "fever is usually suspected rather than confirmed cases. The death "
+            "toll was counted over this figure, not over the confirmed one."
+        ),
+    )
     deaths: int | None = None
     last_published_at: datetime | None = None
     disease_keys: list[str] = Field(default_factory=list)

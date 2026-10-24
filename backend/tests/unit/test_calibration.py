@@ -73,5 +73,7 @@ def test_dot_total_is_compared_with_both_eurostat_directions(tmp_path) -> None:
 
 
 def test_population_gap_above_five_percent_is_flagged() -> None:
-    flagged = compare({"KEN": 50_000_000, "FRA": 68_000_000}, {"KEN": 40_000_000, "FRA": 68_100_000})
+    flagged = compare(
+        {"KEN": 50_000_000, "FRA": 68_000_000}, {"KEN": 40_000_000, "FRA": 68_100_000}
+    )
     assert [row["iso3"] for row in flagged] == ["KEN"]

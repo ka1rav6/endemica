@@ -239,9 +239,7 @@ _SPECS: Final[tuple[DatasetSpec, ...]] = (
         fields_used=("countryiso3code", "value"),
         coverage="Global, annual. Used as a check on UN WPP, not as the denominator.",
         licence="CC BY 4.0.",
-        limitations=(
-            "A gap above 5 percent is flagged. The UN figure remains the denominator.",
-        ),
+        limitations=("A gap above 5 percent is flagged. The UN figure remains the denominator.",),
         required=False,
     ),
 )

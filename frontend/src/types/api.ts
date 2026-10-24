@@ -404,6 +404,10 @@ export interface DiseaseHistory {
   first_published_at: string | null;
   last_published_at: string | null;
   cases_confirmed: number | null;
+  cases_reported: number | null;
+  counts_as_of: string | null;
+  counted_country_count: number;
+  unreconciled_country_count: number;
   deaths: number | null;
   source_labels: string[];
 }
@@ -417,6 +421,9 @@ export interface CountrySpread {
   first_published_at: string | null;
   last_published_at: string | null;
   cases_confirmed: number | null;
+  cases_reported: number | null;
+  counts_as_of: string | null;
+  counts_reconciled: boolean;
   deaths: number | null;
   grounded: boolean;
   report_url: string | null;
@@ -445,6 +452,11 @@ export interface DiseaseSpread {
   first_published_at: string | null;
   last_published_at: string | null;
   cases_confirmed: number | null;
+  cases_reported: number | null;
+  counts_as_of: string | null;
+  counted_country_count: number;
+  unreconciled_country_count: number;
+  coverage_note: string | null;
   deaths: number | null;
   is_active: boolean;
   countries: CountrySpread[];
@@ -461,6 +473,9 @@ export interface CountryDisease {
   first_published_at: string | null;
   last_published_at: string | null;
   cases_confirmed: number | null;
+  cases_reported: number | null;
+  counts_as_of: string | null;
+  counts_reconciled: boolean;
   deaths: number | null;
   grounded: boolean;
   is_active: boolean;
@@ -498,6 +513,7 @@ export interface ActiveCountry {
   disease_count: number;
   report_count: number;
   cases_confirmed: number | null;
+  cases_reported: number | null;
   deaths: number | null;
   last_published_at: string | null;
   disease_keys: string[];

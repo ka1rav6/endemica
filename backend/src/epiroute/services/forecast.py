@@ -77,9 +77,7 @@ def rank_next_countries(
         outbreak = {"covid_19": "covid_2020", "mpox": "mpox_2022"}.get(profile.key or "")
         if outbreak is None:
             status = "not_validated"
-        chance = _chance(
-            rate, population, query.horizon_days, status, card, outbreak=outbreak
-        )
+        chance = _chance(rate, population, query.horizon_days, status, card, outbreak=outbreak)
         ranked.append(
             {
                 "iso3": iso3,

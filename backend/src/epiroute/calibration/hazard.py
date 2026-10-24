@@ -42,9 +42,7 @@ def _negative_log_likelihood(
     predicted = np.clip(
         probability(coefficients, log_lambda, log_population, horizon_days), 1e-6, 1.0 - 1e-6
     )
-    return float(
-        -np.sum(labels * np.log(predicted) + (1.0 - labels) * np.log(1.0 - predicted))
-    )
+    return float(-np.sum(labels * np.log(predicted) + (1.0 - labels) * np.log(1.0 - predicted)))
 
 
 def fit_hazard(

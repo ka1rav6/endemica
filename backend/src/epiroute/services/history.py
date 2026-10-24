@@ -28,11 +28,14 @@ from epiroute.services.risk import PRESENCE_LOOKBACK_DAYS
 ACTIVE_WINDOW_DAYS = PRESENCE_LOOKBACK_DAYS
 
 _NOTE = (
-    "Counts are cumulative as of each report's publication date and are summed "
-    "across countries from each country's highest grounded figure. Reports whose "
-    "numbers could not be grounded in the source text still contribute the country "
-    "and the dates, never a count. Absence of a report is not evidence of absence "
-    "of disease."
+    "A country's figures are the last report of its most recent episode: both "
+    "numbers come from the same bulletin, so they describe the same outbreak on "
+    "the same date. Countries are then summed. A country whose death toll "
+    "exceeded every case figure on its own report is left out of the totals and "
+    "counted separately, because the two were measured over different areas. "
+    "Reports whose numbers could not be grounded in the source text still "
+    "contribute the country and the dates, never a count. Absence of a report is "
+    "not evidence of absence of disease."
 )
 
 
@@ -56,11 +59,37 @@ def list_disease_history(session: Session) -> list[DiseaseHistoryOut]:
             first_published_at=record.first_published_at,
             last_published_at=record.last_published_at,
             cases_confirmed=record.cases_confirmed,
+            cases_reported=record.cases_reported,
             deaths=record.deaths,
+            counts_as_of=record.counts_as_of,
+            counted_country_count=record.counted_country_count,
+            unreconciled_country_count=record.unreconciled_country_count,
             source_labels=list(record.source_labels),
         )
         for record in repo.list_disease_history(session)
     ]
+
+
+# A source can keep naming a disease long after it stops publishing figures
+# for it. WHO Disease Outbreak News is the clearest case: it carried COVID-19
+# case counts only into January 2020 and then moved them to a dedicated
+# dashboard, so the honest reading of 82 cases is "what this source last said",
+# not "how large the outbreak got". A year is long enough that no ordinary
+# reporting lag explains the gap.
+_STALE_COUNT_DAYS = 365
+
+
+def _coverage_note(record: repo.DiseaseHistoryRecord) -> str | None:
+    if record.counts_as_of is None or record.last_published_at is None:
+        return None
+    if (record.last_published_at - record.counts_as_of).days < _STALE_COUNT_DAYS:
+        return None
+    return (
+        f"The newest counts here are from {record.counts_as_of.date().isoformat()}, "
+        "while this source went on naming the disease until "
+        f"{record.last_published_at.date().isoformat()}. It stopped publishing "
+        "figures, so these totals describe that date and not the outbreak since."
+    )
 
 
 def get_disease_spread(session: Session, disease_key: str) -> DiseaseSpreadResponse:
@@ -83,7 +112,10 @@ def get_disease_spread(session: Session, disease_key: str) -> DiseaseSpreadRespo
                 first_published_at=entry.first_published_at,
                 last_published_at=entry.last_published_at,
                 cases_confirmed=entry.cases_confirmed,
+                cases_reported=entry.cases_reported,
                 deaths=entry.deaths,
+                counts_as_of=entry.counts_as_of,
+                counts_reconciled=entry.counts_reconciled,
                 grounded=entry.grounded,
                 report_url=entry.report_url,  # type: ignore[arg-type]
                 report_title=entry.report_title,
@@ -106,6 +138,11 @@ def get_disease_spread(session: Session, disease_key: str) -> DiseaseSpreadRespo
     ]
 
     return DiseaseSpreadResponse(
+        coverage_note=_coverage_note(record),
+        cases_reported=record.cases_reported,
+        counts_as_of=record.counts_as_of,
+        counted_country_count=record.counted_country_count,
+        unreconciled_country_count=record.unreconciled_country_count,
         disease_key=record.disease_key,
         disease_name=record.disease_name,
         disease_family=record.disease_family,
@@ -139,7 +176,10 @@ def get_country_profile(session: Session, country_iso3: str) -> CountryProfileRe
             first_published_at=record.first_published_at,
             last_published_at=record.last_published_at,
             cases_confirmed=record.cases_confirmed,
+            cases_reported=record.cases_reported,
             deaths=record.deaths,
+            counts_as_of=record.counts_as_of,
+            counts_reconciled=record.counts_reconciled,
             grounded=record.grounded,
             is_active=_is_active(record.last_published_at),
             report_url=record.report_url,  # type: ignore[arg-type]
@@ -166,9 +206,9 @@ ACTIVE_RISK_WINDOW_DAYS = ACTIVE_WINDOW_DAYS
 
 _ACTIVE_NOTE = (
     f"Active means a grounded report published in the last {ACTIVE_WINDOW_DAYS} days, "
-    "the same window "
-    "the importation model uses. A country's case figure is the sum of each active "
-    "disease's own cumulative total, so it combines separate outbreaks rather than "
+    "the same window the importation model uses. A country's case figure is where "
+    f"the last {ACTIVE_WINDOW_DAYS} days of bulletins left each active disease, "
+    "summed over diseases, so it combines separate outbreaks rather than "
     "re-counting one."
 )
 
@@ -190,6 +230,7 @@ def get_active_summary(session: Session) -> ActiveSummaryResponse:
                 disease_count=record.disease_count,
                 report_count=record.report_count,
                 cases_confirmed=record.cases_confirmed,
+                cases_reported=record.cases_reported,
                 deaths=record.deaths,
                 last_published_at=record.last_published_at,
                 disease_keys=[key for key, _ in record.diseases],

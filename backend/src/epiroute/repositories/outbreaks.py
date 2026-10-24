@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import Any
@@ -23,6 +24,19 @@ class CumulativePoint:
     outbreak_started_on: date | None = None
     source_name: str = ""
     disease_id: str = ""
+    cases_probable: int | None = None
+    cases_suspected: int | None = None
+
+    @property
+    def cases_any(self) -> int | None:
+        """The widest case figure the source gave, confirmed first.
+
+        A death toll is only comparable with a case count that is at least as
+        wide as the one the deaths were counted over, so the consistency check
+        uses this rather than the confirmed column alone.
+        """
+        widest = _greater(self.cases_confirmed, self.cases_probable)
+        return _greater(widest, self.cases_suspected)
 
 
 def get_report(session: Session, report_id: str) -> OutbreakReport | None:
@@ -165,13 +179,19 @@ def _points_for_rows(
         existing = by_report.get(report.source_identifier)
         confirmed = observation.cases_confirmed
         deaths = observation.deaths
+        probable = observation.cases_probable
+        suspected = observation.cases_suspected
         if existing is not None:
             confirmed = _greater(existing.cases_confirmed, confirmed)
             deaths = _greater(existing.deaths, deaths)
+            probable = _greater(existing.cases_probable, probable)
+            suspected = _greater(existing.cases_suspected, suspected)
         by_report[report.source_identifier] = CumulativePoint(
             published_at=report.published_at,
             cases_confirmed=confirmed,
             deaths=deaths,
+            cases_probable=probable,
+            cases_suspected=suspected,
             report_identifier=report.source_identifier,
             report_url=report.source_url,
             outbreak_started_on=find_outbreak_start(report.narrative_text or ""),
@@ -303,20 +323,28 @@ def _running_max(series: list[CumulativePoint]) -> list[CumulativePoint]:
     """Carry each cumulative count forward, restarting at every new outbreak."""
     best_cases: int | None = None
     best_deaths: int | None = None
+    best_probable: int | None = None
+    best_suspected: int | None = None
     previous: CumulativePoint | None = None
     out: list[CumulativePoint] = []
     for point in series:
         if _starts_new_episode(point, best_cases, previous):
             best_cases = point.cases_confirmed
             best_deaths = point.deaths
+            best_probable = point.cases_probable
+            best_suspected = point.cases_suspected
         else:
             best_cases = _greater(best_cases, point.cases_confirmed)
             best_deaths = _greater(best_deaths, point.deaths)
+            best_probable = _greater(best_probable, point.cases_probable)
+            best_suspected = _greater(best_suspected, point.cases_suspected)
         out.append(
             CumulativePoint(
                 published_at=point.published_at,
                 cases_confirmed=best_cases,
                 deaths=best_deaths,
+                cases_probable=best_probable,
+                cases_suspected=best_suspected,
                 report_identifier=point.report_identifier,
                 report_url=point.report_url,
                 outbreak_started_on=point.outbreak_started_on,
@@ -535,6 +563,179 @@ def focus_for_disease(session: Session, disease_key: str) -> DiseaseFocus | None
     return DiseaseFocus(*row) if row is not None else None
 
 
+# ---------------------------------------------------------------------------
+# Paired country endpoints
+#
+# Every total the app shows is built from these. The previous version asked
+# SQL for max(cases) and max(deaths) over a whole disease, which took the two
+# numbers from whatever report happened to hold the largest of each. Over a
+# disease that has flared repeatedly for thirty years that pairs a case count
+# from one epidemic with a death toll from another, which is how the app came
+# to show more deaths than cases for 26 of its 56 diseases.
+#
+# An endpoint instead is the last point of one country's latest episode of one
+# source's series, so the two numbers were published together, in the same
+# bulletin, about the same outbreak, and carry the date they were current on.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class SeriesEndpoint:
+    """Where one country's latest episode of one disease had got to."""
+
+    disease_key: str
+    country_iso3: str
+    cases_confirmed: int | None
+    cases_probable: int | None
+    cases_suspected: int | None
+    deaths: int | None
+    as_of: datetime
+    episode_report_count: int
+    source_name: str
+    report_identifier: str
+    report_url: str
+
+    @property
+    def cases_any(self) -> int | None:
+        widest = _greater(self.cases_confirmed, self.cases_probable)
+        return _greater(widest, self.cases_suspected)
+
+    @property
+    def consistent(self) -> bool:
+        """Whether the deaths can sit beside the cases in one sentence.
+
+        A toll larger than every case figure on the same report means the two
+        were counted over different scopes - commonly deaths across a whole
+        region against cases in one province. Such a pair is reported as a
+        count that could not be reconciled rather than silently summed.
+        """
+        cases = self.cases_any
+        if self.deaths is None or cases is None:
+            return True
+        return self.deaths <= cases
+
+
+def _endpoint_rows(
+    session: Session, *, disease_key: str | None, since: datetime | None
+) -> list[tuple[OutbreakObservation, OutbreakReport]]:
+    statement = (
+        select(OutbreakObservation, OutbreakReport)
+        .join(OutbreakReport, OutbreakObservation.report_id == OutbreakReport.id)
+        .where(
+            OutbreakReport.disease_key.is_not(None),
+            OutbreakReport.published_at.is_not(None),
+            *_feeds_model(),
+        )
+    )
+    if disease_key is not None:
+        statement = statement.where(OutbreakReport.disease_key == disease_key)
+    if since is not None:
+        statement = statement.where(OutbreakReport.published_at >= since)
+    return [(observation, report) for observation, report in session.execute(statement)]
+
+
+def series_endpoints(
+    session: Session,
+    *,
+    disease_key: str | None = None,
+    since: datetime | None = None,
+) -> dict[tuple[str, str], SeriesEndpoint]:
+    """One paired endpoint per (disease, country), keyed by that pair.
+
+    ``since`` restricts the reports the series is built from, which is what the
+    active view wants: the current episode as the last month described it.
+    """
+    grouped: dict[
+        tuple[str, str], dict[tuple[str, str], list[tuple[OutbreakObservation, OutbreakReport]]]
+    ] = {}
+    for observation, report in _endpoint_rows(session, disease_key=disease_key, since=since):
+        key = (str(report.disease_key), observation.country_iso3)
+        source_key = (report.source_name, str(report.disease_key))
+        grouped.setdefault(key, {}).setdefault(source_key, []).append((observation, report))
+
+    endpoints: dict[tuple[str, str], SeriesEndpoint] = {}
+    for (disease, iso3), by_source in grouped.items():
+        built = {source: _points_for_rows(rows) for source, rows in by_source.items()}
+        series = choose_single_series(built)
+        if not series:
+            continue
+        last = series[-1]
+        endpoints[(disease, iso3)] = SeriesEndpoint(
+            disease_key=disease,
+            country_iso3=iso3,
+            cases_confirmed=last.cases_confirmed,
+            cases_probable=last.cases_probable,
+            cases_suspected=last.cases_suspected,
+            deaths=last.deaths,
+            as_of=last.published_at,
+            episode_report_count=len(series),
+            source_name=last.source_name,
+            report_identifier=last.report_identifier,
+            report_url=last.report_url,
+        )
+    return endpoints
+
+
+@dataclass(frozen=True, slots=True)
+class CountTotals:
+    """A case total and a death total taken over the same set of countries."""
+
+    cases_confirmed: int | None
+    cases_reported: int | None
+    deaths: int | None
+    as_of: datetime | None
+    counted_country_count: int
+    unreconciled_country_count: int
+
+
+def total_counts(endpoints: Iterable[SeriesEndpoint]) -> CountTotals:
+    """Sum the endpoints that can carry both numbers, and count the rest.
+
+    Only a country with some case figure contributes. A country that reported
+    deaths but no case count would otherwise push the death total above the
+    case total over a set of countries that never had one, which is how a
+    disease came to be shown with more deaths than cases. Those countries are
+    reported as unreconciled instead of being folded in.
+
+    ``cases_reported`` is the widest figure each source gave and
+    ``cases_confirmed`` only the laboratory-confirmed column. Cholera and
+    yellow fever are reported in suspected cases far more often than
+    confirmed ones, so the confirmed total alone would be a small fraction of
+    the outbreak the death toll was counted over.
+    """
+    confirmed = 0
+    reported = 0
+    deaths = 0
+    has_confirmed = False
+    has_deaths = False
+    counted = 0
+    unreconciled = 0
+    as_of: datetime | None = None
+    for endpoint in endpoints:
+        widest = endpoint.cases_any
+        if widest is None or not endpoint.consistent:
+            unreconciled += 1
+            continue
+        counted += 1
+        reported += widest
+        if endpoint.cases_confirmed is not None:
+            confirmed += endpoint.cases_confirmed
+            has_confirmed = True
+        if endpoint.deaths is not None:
+            deaths += endpoint.deaths
+            has_deaths = True
+        moment = _aware(endpoint.as_of)
+        as_of = moment if as_of is None else max(as_of, moment)
+    return CountTotals(
+        cases_confirmed=confirmed if has_confirmed else None,
+        cases_reported=reported if counted else None,
+        deaths=deaths if has_deaths else None,
+        as_of=as_of,
+        counted_country_count=counted,
+        unreconciled_country_count=unreconciled,
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class DiseaseHistoryRecord:
     disease_key: str
@@ -546,7 +747,11 @@ class DiseaseHistoryRecord:
     first_published_at: datetime | None
     last_published_at: datetime | None
     cases_confirmed: int | None
+    cases_reported: int | None
     deaths: int | None
+    counts_as_of: datetime | None
+    counted_country_count: int
+    unreconciled_country_count: int
     grounded_country_count: int
     source_labels: tuple[str, ...]
 
@@ -589,29 +794,13 @@ def list_disease_history(session: Session) -> list[DiseaseHistoryRecord]:
     ).all():
         pathogens[key] = pathogen
 
-    # Case counts are cumulative per report, so the per-country peak is the
-    # right summary; summing reports would multiply-count the same outbreak.
-    peaks = session.execute(
-        select(
-            OutbreakReport.disease_key,
-            OutbreakObservation.country_iso3,
-            func.max(OutbreakObservation.cases_confirmed),
-            func.max(OutbreakObservation.deaths),
-        )
-        .join(OutbreakObservation, OutbreakObservation.report_id == OutbreakReport.id)
-        .where(OutbreakReport.disease_key.is_not(None), *_feeds_model())
-        .group_by(OutbreakReport.disease_key, OutbreakObservation.country_iso3)
-    ).all()
-
-    cases: dict[str, int] = {}
-    deaths: dict[str, int] = {}
-    grounded: dict[str, set[str]] = {}
-    for key, iso3, peak_cases, peak_deaths in peaks:
-        grounded.setdefault(key, set()).add(iso3)
-        if peak_cases is not None:
-            cases[key] = cases.get(key, 0) + int(peak_cases)
-        if peak_deaths is not None:
-            deaths[key] = deaths.get(key, 0) + int(peak_deaths)
+    # One paired endpoint per country, then summed. Both numbers in a row come
+    # from the same bulletin about the same episode, so they can be added up
+    # without mixing one epidemic's cases into another's deaths.
+    by_disease: dict[str, list[SeriesEndpoint]] = {}
+    for (key, _iso3), endpoint in series_endpoints(session).items():
+        by_disease.setdefault(key, []).append(endpoint)
+    totals = {key: total_counts(group) for key, group in by_disease.items()}
 
     labels: dict[str, list[str]] = {}
     for key, label in session.execute(
@@ -635,9 +824,15 @@ def list_disease_history(session: Session) -> list[DiseaseHistoryRecord]:
             country_count=countries.get(key, 0),
             first_published_at=first,
             last_published_at=last,
-            cases_confirmed=cases.get(key),
-            deaths=deaths.get(key),
-            grounded_country_count=len(grounded.get(key, ())),
+            cases_confirmed=totals[key].cases_confirmed if key in totals else None,
+            cases_reported=totals[key].cases_reported if key in totals else None,
+            deaths=totals[key].deaths if key in totals else None,
+            counts_as_of=totals[key].as_of if key in totals else None,
+            counted_country_count=totals[key].counted_country_count if key in totals else 0,
+            unreconciled_country_count=(
+                totals[key].unreconciled_country_count if key in totals else 0
+            ),
+            grounded_country_count=len(by_disease.get(key, ())),
             source_labels=tuple(sorted(labels.get(key, []))[:8]),
         )
         for key, name, family, reports, first, last in spans
@@ -654,7 +849,10 @@ class CountrySpreadRecord:
     first_published_at: datetime | None
     last_published_at: datetime | None
     cases_confirmed: int | None
+    cases_reported: int | None
     deaths: int | None
+    counts_as_of: datetime | None
+    counts_reconciled: bool
     grounded: bool
     report_url: str | None
     report_title: str | None
@@ -675,17 +873,8 @@ def country_spread_for_disease(session: Session, disease_key: str) -> list[Count
     ).all()
 
     grounded = {
-        iso3: (cases, deaths)
-        for iso3, cases, deaths in session.execute(
-            select(
-                OutbreakObservation.country_iso3,
-                func.max(OutbreakObservation.cases_confirmed),
-                func.max(OutbreakObservation.deaths),
-            )
-            .join(OutbreakReport, OutbreakObservation.report_id == OutbreakReport.id)
-            .where(OutbreakReport.disease_key == disease_key, *_feeds_model())
-            .group_by(OutbreakObservation.country_iso3)
-        ).all()
+        iso3: endpoint
+        for (_key, iso3), endpoint in series_endpoints(session, disease_key=disease_key).items()
     }
 
     latest = {
@@ -704,7 +893,7 @@ def country_spread_for_disease(session: Session, disease_key: str) -> list[Count
 
     records: list[CountrySpreadRecord] = []
     for iso3, reports, first, last in rows:
-        counts = grounded.get(iso3)
+        endpoint = grounded.get(iso3)
         url, title = latest.get(iso3, (None, None))
         records.append(
             CountrySpreadRecord(
@@ -712,9 +901,12 @@ def country_spread_for_disease(session: Session, disease_key: str) -> list[Count
                 report_count=reports,
                 first_published_at=first,
                 last_published_at=last,
-                cases_confirmed=int(counts[0]) if counts and counts[0] is not None else None,
-                deaths=int(counts[1]) if counts and counts[1] is not None else None,
-                grounded=iso3 in grounded,
+                cases_confirmed=endpoint.cases_confirmed if endpoint else None,
+                cases_reported=endpoint.cases_any if endpoint else None,
+                deaths=endpoint.deaths if endpoint else None,
+                counts_as_of=endpoint.as_of if endpoint else None,
+                counts_reconciled=endpoint.consistent if endpoint else True,
+                grounded=endpoint is not None,
                 report_url=url,
                 report_title=title,
             )
@@ -733,6 +925,11 @@ class DiseaseTimelinePoint:
     new_countries: tuple[str, ...]
     cases_confirmed: int | None
     deaths: int | None
+
+
+def _sum_or_none(values: Iterable[int | None]) -> int | None:
+    present = [int(value) for value in values if value is not None]
+    return sum(present) if present else None
 
 
 def disease_timeline(session: Session, disease_key: str) -> list[DiseaseTimelinePoint]:
@@ -759,7 +956,7 @@ def disease_timeline(session: Session, disease_key: str) -> list[DiseaseTimeline
     for published_at, report_id, iso3, cases, deaths, status in rows:
         bucket = years.setdefault(
             published_at.year,
-            {"reports": set(), "countries": set(), "new": [], "cases": {}, "deaths": {}},
+            {"reports": set(), "countries": set(), "new": [], "pairs": {}},
         )
         bucket["reports"].add(str(report_id))
         if not iso3:
@@ -769,10 +966,11 @@ def disease_timeline(session: Session, disease_key: str) -> list[DiseaseTimeline
             seen.add(iso3)
             bucket["new"].append(iso3)
         if status in (ExtractionStatus.VERIFIED, ExtractionStatus.PARTIAL):
-            if cases is not None:
-                bucket["cases"][iso3] = max(bucket["cases"].get(iso3, 0), int(cases))
-            if deaths is not None:
-                bucket["deaths"][iso3] = max(bucket["deaths"].get(iso3, 0), int(deaths))
+            pair = bucket["pairs"].get(iso3)
+            if pair is None or published_at >= pair[0]:
+                # Both numbers from the latest report of the year, so a year's
+                # deaths are never paired with another year's case count.
+                bucket["pairs"][iso3] = (published_at, cases, deaths)
 
     points: list[DiseaseTimelinePoint] = []
     running = 0
@@ -787,8 +985,10 @@ def disease_timeline(session: Session, disease_key: str) -> list[DiseaseTimeline
                 new_country_count=len(bucket["new"]),
                 cumulative_country_count=running,
                 new_countries=tuple(bucket["new"]),
-                cases_confirmed=sum(bucket["cases"].values()) or None,
-                deaths=sum(bucket["deaths"].values()) or None,
+                cases_confirmed=_sum_or_none(
+                    cases for _when, cases, _deaths in bucket["pairs"].values()
+                ),
+                deaths=_sum_or_none(deaths for _when, _cases, deaths in bucket["pairs"].values()),
             )
         )
     return points
@@ -804,7 +1004,10 @@ class CountryDiseaseRecord:
     first_published_at: datetime | None
     last_published_at: datetime | None
     cases_confirmed: int | None
+    cases_reported: int | None
     deaths: int | None
+    counts_as_of: datetime | None
+    counts_reconciled: bool
     grounded: bool
     report_url: str | None
 
@@ -831,17 +1034,9 @@ def diseases_for_country(session: Session, country_iso3: str) -> list[CountryDis
     ).all()
 
     grounded = {
-        key: (cases, deaths)
-        for key, cases, deaths in session.execute(
-            select(
-                OutbreakReport.disease_key,
-                func.max(OutbreakObservation.cases_confirmed),
-                func.max(OutbreakObservation.deaths),
-            )
-            .join(OutbreakObservation, OutbreakObservation.report_id == OutbreakReport.id)
-            .where(OutbreakObservation.country_iso3 == iso3, *_feeds_model())
-            .group_by(OutbreakReport.disease_key)
-        ).all()
+        key: endpoint
+        for (key, country), endpoint in series_endpoints(session).items()
+        if country == iso3
     }
 
     urls: dict[str | None, str | None] = {}
@@ -862,12 +1057,11 @@ def diseases_for_country(session: Session, country_iso3: str) -> list[CountryDis
             report_count=reports,
             first_published_at=first,
             last_published_at=last,
-            cases_confirmed=(
-                int(grounded[key][0]) if key in grounded and grounded[key][0] is not None else None
-            ),
-            deaths=(
-                int(grounded[key][1]) if key in grounded and grounded[key][1] is not None else None
-            ),
+            cases_confirmed=grounded[key].cases_confirmed if key in grounded else None,
+            cases_reported=grounded[key].cases_any if key in grounded else None,
+            deaths=grounded[key].deaths if key in grounded else None,
+            counts_as_of=grounded[key].as_of if key in grounded else None,
+            counts_reconciled=grounded[key].consistent if key in grounded else True,
             grounded=key in grounded,
             report_url=urls.get(key),
         )
@@ -973,6 +1167,7 @@ class ActiveCountryRecord:
     disease_count: int
     report_count: int
     cases_confirmed: int | None
+    cases_reported: int | None
     deaths: int | None
     last_published_at: datetime | None
     diseases: tuple[tuple[str, str], ...]
@@ -986,8 +1181,6 @@ def active_countries(session: Session, *, since: datetime) -> list[ActiveCountry
             OutbreakReport.disease_key,
             func.max(OutbreakReport.disease_name),
             func.count(func.distinct(OutbreakReport.id)),
-            func.max(OutbreakObservation.cases_confirmed),
-            func.max(OutbreakObservation.deaths),
             func.max(OutbreakReport.published_at),
         )
         .join(OutbreakReport, OutbreakObservation.report_id == OutbreakReport.id)
@@ -999,30 +1192,35 @@ def active_countries(session: Session, *, since: datetime) -> list[ActiveCountry
         .group_by(OutbreakObservation.country_iso3, OutbreakReport.disease_key)
     ).all()
 
+    # The window is part of the series, not applied after it: a country's
+    # active figure is where the last month's bulletins left its current
+    # episode, not the largest number it ever reported for that disease.
+    endpoints = series_endpoints(session, since=since)
     grouped: dict[str, dict[str, Any]] = {}
-    for iso3, key, name, reports, cases, deaths, last in rows:
+    for iso3, key, name, reports, last in rows:
         bucket = grouped.setdefault(
             iso3,
-            {"reports": 0, "cases": 0, "deaths": 0, "last": None, "diseases": []},
+            {"reports": 0, "last": None, "diseases": [], "endpoints": []},
         )
         bucket["reports"] += reports
-        # Each disease contributes its own peak; summing reports would
-        # multiply-count one outbreak's cumulative figures.
-        if cases is not None:
-            bucket["cases"] += int(cases)
-        if deaths is not None:
-            bucket["deaths"] += int(deaths)
+        endpoint = endpoints.get((key, iso3))
+        if endpoint is not None:
+            bucket["endpoints"].append(endpoint)
         if last is not None and (bucket["last"] is None or last > bucket["last"]):
             bucket["last"] = last
         bucket["diseases"].append((key, name or key))
+
+    for bucket in grouped.values():
+        bucket["totals"] = total_counts(bucket["endpoints"])
 
     records = [
         ActiveCountryRecord(
             country_iso3=iso3,
             disease_count=len(bucket["diseases"]),
             report_count=bucket["reports"],
-            cases_confirmed=bucket["cases"] or None,
-            deaths=bucket["deaths"] or None,
+            cases_confirmed=bucket["totals"].cases_confirmed,
+            cases_reported=bucket["totals"].cases_reported,
+            deaths=bucket["totals"].deaths,
             last_published_at=bucket["last"],
             diseases=tuple(sorted(bucket["diseases"], key=lambda entry: entry[1])),
         )

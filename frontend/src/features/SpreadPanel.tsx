@@ -38,7 +38,7 @@ export function SpreadPanel({
       return year === null || year <= yearCeiling;
     });
     if (order === 'arrival') return within;
-    return [...within].sort((x, y) => (y.cases_confirmed ?? -1) - (x.cases_confirmed ?? -1));
+    return [...within].sort((x, y) => (y.cases_reported ?? -1) - (x.cases_reported ?? -1));
   }, [spread, yearCeiling, order]);
 
   if (loading && !spread) {
@@ -54,7 +54,7 @@ export function SpreadPanel({
     return <p className="empty">Pick a disease to trace how it spread.</p>;
   }
 
-  const worst = Math.max(...visible.map((country) => country.cases_confirmed ?? 0), 1);
+  const worst = Math.max(...visible.map((country) => country.cases_reported ?? 0), 1);
   const hidden = spread.countries.length - visible.length;
 
   return (
@@ -75,21 +75,46 @@ export function SpreadPanel({
           </div>
           <div className="stat">
             <span className="stat__label">Cases</span>
-            <span className="stat__value num">{formatCount(spread.cases_confirmed)}</span>
-            <span className="stat__note">sum of per-country peaks</span>
+            <span className="stat__value num">{formatCount(spread.cases_reported)}</span>
+            <span className="stat__note">
+              {spread.counts_as_of
+                ? `as of ${spread.counts_as_of.slice(0, 10)}`
+                : 'no grounded figure'}
+            </span>
           </div>
           <div className="stat">
             <span className="stat__label">Deaths</span>
             <span className="stat__value stat__value--hot num">{formatCount(spread.deaths)}</span>
-            <span className="stat__note">as reported</span>
+            <span className="stat__note">
+              {spread.counted_country_count} of{' '}
+              {spread.counted_country_count + spread.unreconciled_country_count} countries counted
+            </span>
           </div>
         </div>
       </div>
 
+      {spread.coverage_note && (
+        <div className="sec">
+          <div className="warn warn--info">{spread.coverage_note}</div>
+        </div>
+      )}
+
+      {spread.unreconciled_country_count > 0 && (
+        <div className="sec">
+          <p className="footnote">
+            {spread.unreconciled_country_count}{' '}
+            {spread.unreconciled_country_count === 1 ? 'country is' : 'countries are'} left out of
+            the two figures above: the source gave a death toll there without a case count it could
+            be set against, or one larger than every case figure on the same report. Their rows
+            below still show what was published.
+          </p>
+        </div>
+      )}
+
       <div className="sec">
         <div className="sec__head">
           <h3 className="sec__title">
-            {order === 'cases' ? 'Ranked by confirmed cases' : 'Order of arrival'}
+            {order === 'cases' ? 'Ranked by reported cases' : 'Order of arrival'}
           </h3>
           {hidden > 0 && <span className="chip chip--past num">{hidden} later, hidden</span>}
           <div className="segments" role="group" aria-label="Rank countries by">
@@ -137,14 +162,14 @@ export function SpreadPanel({
                   <span className="row__bar" aria-hidden="true">
                     <i
                       style={{
-                        width: `${Math.max(((country.cases_confirmed ?? 0) / worst) * 100, country.cases_confirmed ? 2 : 0)}%`,
+                        width: `${Math.max(((country.cases_reported ?? 0) / worst) * 100, country.cases_reported ? 2 : 0)}%`,
                       }}
                     />
                   </span>
                   <span className="row__aside" style={{ fontSize: 10.5, color: 'var(--ink-4)' }}>
-                    {country.cases_confirmed === null
+                    {country.cases_reported === null
                       ? 'no grounded count'
-                      : `${formatCount(country.cases_confirmed)} cases`}
+                      : `${formatCount(country.cases_reported)} cases`}
                     {country.deaths === null ? '' : ` · ${formatCount(country.deaths)} deaths`}
                     {` · ${country.report_count} report${country.report_count === 1 ? '' : 's'}`}
                   </span>
