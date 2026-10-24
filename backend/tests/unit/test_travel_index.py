@@ -16,7 +16,9 @@ from epiroute.epidemiology.travel_index import (
     PROBABILITY_CAP,
     PROBABILITY_FLOOR,
     WEIGHTS,
+    TravelComponentScore,
     TravelIndexInputs,
+    TravelIndexResult,
     band_for,
     compute_travel_index,
     round_tenths,
@@ -27,7 +29,7 @@ from epiroute.epidemiology.travel_index import (
 AS_OF = datetime(2026, 10, 24, tzinfo=UTC)
 
 
-def _index(**overrides: object):
+def _index(**overrides: object) -> TravelIndexResult:
     payload = {
         "presence_status": "not_estimable",
         "as_of": AS_OF,
@@ -36,7 +38,7 @@ def _index(**overrides: object):
     return compute_travel_index(TravelIndexInputs(**payload))  # type: ignore[arg-type]
 
 
-def _component(result, key: str):
+def _component(result: TravelIndexResult, key: str) -> TravelComponentScore:
     return next(component for component in result.components if component.key == key)
 
 
@@ -138,10 +140,12 @@ class TestProbabilities:
     def test_small_probabilities_still_separate_destinations(self) -> None:
         # The whole point of the log scale: a thousandfold difference in
         # probability must not collapse onto the same displayed score.
-        scores = [
+        raw = [
             _component(_index(importation_probability=p), "importation").score
             for p in (1e-5, 1e-4, 1e-3)
         ]
+        assert all(score is not None for score in raw)
+        scores = [float(score) for score in raw if score is not None]
         assert scores == sorted(scores)
         assert len(set(scores)) == 3
 

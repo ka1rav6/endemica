@@ -189,7 +189,8 @@ def fit_gravity_model(
     # sides of the split and leak the same route into the test score.
     pair_groups: dict[tuple[str, str], list[int]] = {}
     for index, (features, _) in enumerate(usable):
-        pair = tuple(sorted((features.origin_iso3, features.dest_iso3)))
+        first, second = sorted((features.origin_iso3, features.dest_iso3))
+        pair = (first, second)
         pair_groups.setdefault(pair, []).append(index)
     rng = np.random.default_rng(seed)
     group_order = rng.permutation(len(pair_groups))

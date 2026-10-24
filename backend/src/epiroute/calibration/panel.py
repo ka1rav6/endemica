@@ -254,8 +254,9 @@ def _populations(settings: Settings) -> dict[str, float]:
     frame = pd.read_parquet(path)
     if "population" not in frame.columns:
         return {}
+    populations = pd.to_numeric(frame["population"], errors="coerce")
     return {
-        str(row.iso3): float(row.population)
-        for row in frame.itertuples(index=False)
-        if row.population and row.population > 0
+        str(iso3): float(population)
+        for iso3, population in zip(frame["iso3"], populations, strict=True)
+        if pd.notna(population) and float(population) > 0
     }

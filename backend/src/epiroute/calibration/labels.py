@@ -13,6 +13,7 @@ from collections import defaultdict
 from datetime import datetime
 from io import StringIO
 from pathlib import Path
+from typing import cast
 
 import pandas as pd
 
@@ -149,7 +150,8 @@ def first_reports_from_mpox(path: Path) -> pd.DataFrame:
     first = frame.groupby("iso3", as_index=False)["first_report"].min()
     first["outbreak"] = "mpox_2022"
     first["source"] = "global_health"
-    return first[["outbreak", "iso3", "first_report", "source"]]
+    # cast: pandas-stubs types a multi-column selection as a Series.
+    return cast("pd.DataFrame", first[["outbreak", "iso3", "first_report", "source"]])
 
 
 def weekly_cases_from_owid(path: Path, outbreak: str) -> pd.DataFrame:

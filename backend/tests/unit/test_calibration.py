@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 
 import numpy as np
 
@@ -57,7 +58,7 @@ def test_a_large_disagreement_is_held_for_review() -> None:
     assert corroborate(primary, other).verdict == "gross_conflict"
 
 
-def test_dot_total_is_compared_with_both_eurostat_directions(tmp_path) -> None:
+def test_dot_total_is_compared_with_both_eurostat_directions(tmp_path: Path) -> None:
     path = tmp_path / "dot.csv"
     path.write_text("usg_apt,fg_apt,sum_total\nJFK,LHR,200\n", encoding="utf-8")
     airports = {

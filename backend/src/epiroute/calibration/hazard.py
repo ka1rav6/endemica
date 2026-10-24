@@ -152,7 +152,8 @@ _TOLERANCE = 1e-9
 def cloglog_rate(design: np.ndarray, beta: np.ndarray, horizon_days: float) -> np.ndarray:
     """``horizon * exp(eta)``, clipped so the exponential cannot overflow."""
     eta = np.clip(design @ beta, -40.0, 40.0)
-    return horizon_days * np.exp(eta)
+    rate: np.ndarray = horizon_days * np.exp(eta)
+    return rate
 
 
 def cloglog_probability(design: np.ndarray, beta: np.ndarray, horizon_days: float) -> np.ndarray:
@@ -268,6 +269,6 @@ def _standardise(design: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray
 
 def _unstandardise(beta: np.ndarray, mean: np.ndarray, scale: np.ndarray) -> np.ndarray:
     """Map coefficients fitted on the scaled matrix back onto the real columns."""
-    out = beta / scale
+    out: np.ndarray = beta / scale
     out[0] = beta[0] - float(np.sum(beta[1:] * mean[1:] / scale[1:]))
     return out

@@ -36,7 +36,7 @@ def test_ring_that_crosses_the_antimeridian_stays_in_the_pacific() -> None:
 
 
 def test_split_pacific_parts_average_across_the_date_line() -> None:
-    geometry = {
+    geometry: dict[str, object] = {
         "type": "MultiPolygon",
         "coordinates": [[_square(170, 0, 2)], [_square(-170, 0, 2)]],
     }

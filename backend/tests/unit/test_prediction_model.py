@@ -114,6 +114,40 @@ def test_the_fit_recovers_a_slope_it_was_given() -> None:
     assert beta[1] == pytest.approx(0.9, abs=0.2)
 
 
+def test_badly_scaled_columns_still_recover_every_slope() -> None:
+    """The reason fit_cloglog standardises its columns before fitting.
+
+    The real design matrix holds a column of ones, a log arrival rate near -12
+    and a log passenger count near 8. One scalar step size cannot suit all
+    three: the well-scaled directions converge while the others crawl, and the
+    fit stops with the mean probability about right and the individual slopes
+    still near where they started. This pins that the slopes come back.
+    """
+    generator = np.random.default_rng(11)
+    rows = 4000
+    columns = np.column_stack(
+        [
+            np.ones(rows),
+            generator.normal(-12.0, 2.0, rows),
+            generator.normal(8.0, 2.0, rows),
+            generator.normal(2.5, 0.8, rows),
+        ]
+    )
+    slopes = np.array([0.8, 0.2, 0.3])
+    # Pick the intercept so the base rate is realistic rather than degenerate:
+    # with these column means a plausible eta is about -4.
+    intercept = -4.0 - float(slopes @ np.array([-12.0, 8.0, 2.5]))
+    truth = np.concatenate(([intercept], slopes))
+    labels = (generator.random(rows) < cloglog_probability(columns, truth, HORIZON_DAYS)).astype(
+        float
+    )
+    assert 0.2 < labels.mean() < 0.8
+
+    beta = fit_cloglog(columns, labels, horizon_days=HORIZON_DAYS, monotone_columns=(1, 2))
+    np.testing.assert_allclose(beta[1:], slopes, atol=0.06)
+    assert beta[0] == pytest.approx(intercept, abs=0.3)
+
+
 def test_the_fit_is_the_same_on_a_second_run() -> None:
     frame = panel(300, seed=5)
     design = design_from_panel(frame)

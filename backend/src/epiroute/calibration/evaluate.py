@@ -146,7 +146,8 @@ def score(
 def uncalibrated(frame: pd.DataFrame, horizon_days: float = HORIZON_DAYS) -> np.ndarray:
     """The arithmetic the app falls back to: a Poisson first arrival at rate lambda."""
     rate = np.clip(frame["lambda"].to_numpy(dtype=float), 0.0, None)
-    return 1.0 - np.exp(-rate * horizon_days)
+    probability: np.ndarray = 1.0 - np.exp(-rate * horizon_days)
+    return probability
 
 
 def inbound_only(frame: pd.DataFrame) -> np.ndarray:

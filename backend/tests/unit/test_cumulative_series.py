@@ -79,7 +79,9 @@ class TestAcrossOutbreaks:
                 _point(START + timedelta(days=45), 9704),
             ]
         )
-        assert series[-1].cases_confirmed > series[-2].cases_confirmed
+        latest, previous = series[-1].cases_confirmed, series[-2].cases_confirmed
+        assert latest is not None and previous is not None
+        assert latest > previous
 
     def test_a_year_long_gap_starts_a_new_outbreak(self) -> None:
         # Counts keep rising, but the reports are two separate episodes.

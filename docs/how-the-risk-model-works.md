@@ -4,6 +4,8 @@ EpiRoute does not publish one "probability of infection." A selected country get
 
 The numbers are for situational awareness. They are not a forecast, not a diagnosis, and not a substitute for WHO or national travel advice.
 
+Three of the four are closed-form epidemiology, evaluated per request. The fourth, **Most likely to report next**, is a model fitted offline on COVID-19 (2020) and mpox (2022); [docs/mlunderstand.md](mlunderstand.md) explains its mathematics and what it was and was not able to validate.
+
 ## The three questions
 
 1. **Is it already here?** Has a source report attributed cases to this country?
@@ -156,13 +158,14 @@ Do not read the index as the chance that a particular traveller gets sick.
 - **Will an infected traveller arrive** is question 2. The value is modelled. The band is the scenario range.
 - **Will sustained local transmission begin** is question 3, from the same arrival rate and the pathogen's R and k.
 - **Not estimable** means an input was missing or the formula does not apply. It does not mean the risk is zero.
-- **Most likely to report next** is a fourth number: the chance a country that has not reported yet reports within 28 days. It is shown as calibrated only when `model_card.json` passed its held-out gates on COVID-19 (2020) and mpox (2022). Otherwise the list is the uncalibrated arrival formula and the screen says **not validated**.
+- **Most likely to report next** is a fourth number: the chance a country that has not reported yet reports within 28 days. It comes from a fitted survival model, for every disease, and the screen says which of three things it is. **Calibrated**: order and percentage are both findings. **Ranking validated** (what it says today): the order passed its held-out tests on both COVID-19 and mpox, the absolute level did not, so read the order and treat the percentage as indicative. **Not validated**: the card is missing or failed, and the list falls back to the plain arrival formula. See [docs/mlunderstand.md](mlunderstand.md) for the mathematics and `MODEL_EVALUATION.md` for the current numbers.
 
 ## Where the inputs come from
 
 | Input | Primary | Check |
 | --- | --- | --- |
 | Cases | WHO Disease Outbreak News | ECDC weekly threats report, when TinyFish can read it. News search only finds the official page. A news article's number is never used. |
+| Cases, COVID-19 only | WHO's COVID-19 global data table | WHO stopped covering COVID-19 in Disease Outbreak News after January 2020, so that archive holds ten usable reports for it. The dedicated table holds 227 countries. |
 | Passengers | Eurostat 2024, plus 2019 and 2022 for the years those outbreaks happened | US Department of Transportation international passengers. They agree when the ratio is between 0.8 and 1.25. |
 | Missing routes | Gravity model trained on those observed counts | Held out by unordered country pair, so a route and its reverse are not split across the test |
 | Population | UN World Population Prospects 2024 | World Bank total population. A gap above 5% is flagged. The UN figure is still the denominator. |
