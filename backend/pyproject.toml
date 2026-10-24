@@ -2,9 +2,12 @@
 name = "epiroute"
 version = "0.1.0"
 description = "EpiRoute — outbreak intelligence over the air-travel network"
-readme = "../README.md"
-requires-python = ">=3.11"
-license = { file = "../LICENSE" }
+# README and LICENSE live at the repository root, outside this package directory,
+# so they are not referenced here; see ../README.md and ../LICENSE.
+# 3.12 is the floor because numpy 2.x ships type stubs that use
+# 3.12-only syntax, which mypy cannot parse under an older target.
+requires-python = ">=3.12"
+license = "MIT"
 
 # Runtime dependencies. Each entry is here because a documented feature needs
 # it; see docs/architecture.md for the reasoning behind the non-obvious ones.
@@ -51,7 +54,7 @@ packages = ["src/epiroute"]
 # ---------------------------------------------------------------------------
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py312"
 src = ["src", "tests"]
 
 [tool.ruff.lint]
@@ -78,6 +81,7 @@ ignore = [
     "ANN401",  # Any is occasionally the honest annotation for external JSON
     "TRY003",  # long messages inside raise are useful for operators
     "B008",    # FastAPI's Depends()/Query() defaults are the documented idiom
+    "D107",    # the Google convention documents __init__ args in the class docstring
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -93,7 +97,7 @@ convention = "google"
 # mypy — static type checking
 # ---------------------------------------------------------------------------
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 files = ["src", "tests"]
 strict = true
 plugins = []

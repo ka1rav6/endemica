@@ -59,8 +59,10 @@ setup-backend:
     set -euo pipefail
     cd "{{ backend }}"
     if command -v uv >/dev/null 2>&1; then
-        uv venv --python 3.11 .venv 2>/dev/null || uv venv .venv
-        uv pip install --python .venv/bin/python -e ".[dev]"
+        # backend/.python-version pins the interpreter; --allow-existing keeps
+        # `just setup` idempotent (AGENTS.md section 6.4).
+        uv venv --allow-existing .venv
+        uv pip install --quiet --python .venv/bin/python -e ".[dev]"
     else
         python3 -m venv .venv
         .venv/bin/python -m pip install --upgrade pip
@@ -279,14 +281,25 @@ lint-backend:
 lint-frontend:
     cd "{{ frontend }}" && npm run lint
 
-# Apply formatting and safe lint fixes.
-format:
-    cd "{{ backend }}" && "{{ venv }}/bin/ruff" format src tests && "{{ venv }}/bin/ruff" check --fix src tests
+# Apply formatting and safe lint fixes to both languages.
+format: format-backend format-frontend
+
+# Format Python with Ruff and apply its safe fixes.
+format-backend:
+    cd "{{ backend }}" && "{{ venv }}/bin/ruff" format src tests
+    cd "{{ backend }}" && "{{ venv }}/bin/ruff" check --fix src tests
+
+# Format TypeScript with Prettier.
+format-frontend:
     cd "{{ frontend }}" && npm run format
 
 # Verify formatting without changing files (for CI).
-format-check:
+format-check: format-check-backend format-check-frontend
+
+format-check-backend:
     cd "{{ backend }}" && "{{ venv }}/bin/ruff" format --check src tests
+
+format-check-frontend:
     cd "{{ frontend }}" && npm run format:check
 
 # Static type checks for both languages.
