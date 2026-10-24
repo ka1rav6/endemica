@@ -201,6 +201,122 @@
         "title": "ComponentHealth",
         "type": "object"
       },
+      "CountryDiseaseOut": {
+        "description": "One disease ever reported for one country.",
+        "properties": {
+          "cases_confirmed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cases Confirmed"
+          },
+          "deaths": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deaths"
+          },
+          "disease_family": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disease Family"
+          },
+          "disease_key": {
+            "title": "Disease Key",
+            "type": "string"
+          },
+          "disease_name": {
+            "title": "Disease Name",
+            "type": "string"
+          },
+          "first_published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Published At"
+          },
+          "grounded": {
+            "title": "Grounded",
+            "type": "boolean"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "last_published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Published At"
+          },
+          "pathogen_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pathogen Key"
+          },
+          "report_count": {
+            "title": "Report Count",
+            "type": "integer"
+          },
+          "report_url": {
+            "anyOf": [
+              {
+                "format": "uri",
+                "maxLength": 2083,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Url"
+          }
+        },
+        "required": [
+          "disease_key",
+          "disease_name",
+          "report_count",
+          "grounded",
+          "is_active"
+        ],
+        "title": "CountryDiseaseOut",
+        "type": "object"
+      },
       "CountryListResponse": {
         "properties": {
           "items": {
@@ -244,6 +360,13 @@
               }
             ],
             "title": "Centroid Lon"
+          },
+          "diseases": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Diseases",
+            "type": "array"
           },
           "has_reported_outbreak": {
             "default": false,
@@ -326,6 +449,229 @@
         "title": "CountryOut",
         "type": "object"
       },
+      "CountryProfileResponse": {
+        "description": "Everything EpiRoute holds about one country's outbreak record.",
+        "properties": {
+          "active_disease_count": {
+            "title": "Active Disease Count",
+            "type": "integer"
+          },
+          "centroid_lat": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Centroid Lat"
+          },
+          "centroid_lon": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Centroid Lon"
+          },
+          "diseases": {
+            "items": {
+              "$ref": "#/components/schemas/CountryDiseaseOut"
+            },
+            "title": "Diseases",
+            "type": "array"
+          },
+          "inbound_flow_count": {
+            "default": 0,
+            "title": "Inbound Flow Count",
+            "type": "integer"
+          },
+          "iso3": {
+            "title": "Iso3",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "population": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Population"
+          },
+          "region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region"
+          },
+          "report_count": {
+            "title": "Report Count",
+            "type": "integer"
+          },
+          "subregion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subregion"
+          }
+        },
+        "required": [
+          "iso3",
+          "name",
+          "report_count",
+          "active_disease_count"
+        ],
+        "title": "CountryProfileResponse",
+        "type": "object"
+      },
+      "CountrySpreadOut": {
+        "description": "One country's involvement in one disease.",
+        "properties": {
+          "arrival_order": {
+            "title": "Arrival Order",
+            "type": "integer"
+          },
+          "cases_confirmed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cases Confirmed"
+          },
+          "centroid_lat": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Centroid Lat"
+          },
+          "centroid_lon": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Centroid Lon"
+          },
+          "country_iso3": {
+            "title": "Country Iso3",
+            "type": "string"
+          },
+          "country_name": {
+            "title": "Country Name",
+            "type": "string"
+          },
+          "deaths": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deaths"
+          },
+          "first_published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Published At"
+          },
+          "grounded": {
+            "title": "Grounded",
+            "type": "boolean"
+          },
+          "last_published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Published At"
+          },
+          "report_count": {
+            "title": "Report Count",
+            "type": "integer"
+          },
+          "report_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Title"
+          },
+          "report_url": {
+            "anyOf": [
+              {
+                "format": "uri",
+                "maxLength": 2083,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Url"
+          }
+        },
+        "required": [
+          "country_iso3",
+          "country_name",
+          "report_count",
+          "grounded",
+          "arrival_order"
+        ],
+        "title": "CountrySpreadOut",
+        "type": "object"
+      },
       "DataFreshness": {
         "description": "Age and status of one data source backing a response.",
         "properties": {
@@ -384,6 +730,344 @@
           "source"
         ],
         "title": "DataFreshness",
+        "type": "object"
+      },
+      "DiseaseHistoryOut": {
+        "description": "One canonical disease across the whole archive.",
+        "properties": {
+          "cases_confirmed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cases Confirmed"
+          },
+          "country_count": {
+            "title": "Country Count",
+            "type": "integer"
+          },
+          "deaths": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deaths"
+          },
+          "disease_family": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disease Family"
+          },
+          "disease_key": {
+            "title": "Disease Key",
+            "type": "string"
+          },
+          "disease_name": {
+            "title": "Disease Name",
+            "type": "string"
+          },
+          "first_published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Published At"
+          },
+          "grounded_country_count": {
+            "title": "Grounded Country Count",
+            "type": "integer"
+          },
+          "last_published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Published At"
+          },
+          "pathogen_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pathogen Key"
+          },
+          "report_count": {
+            "title": "Report Count",
+            "type": "integer"
+          },
+          "source_labels": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Source Labels",
+            "type": "array"
+          }
+        },
+        "required": [
+          "disease_key",
+          "disease_name",
+          "report_count",
+          "country_count",
+          "grounded_country_count"
+        ],
+        "title": "DiseaseHistoryOut",
+        "type": "object"
+      },
+      "DiseaseOut": {
+        "properties": {
+          "country_count": {
+            "title": "Country Count",
+            "type": "integer"
+          },
+          "disease_label": {
+            "title": "Disease Label",
+            "type": "string"
+          },
+          "latest_published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Published At"
+          },
+          "pathogen_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pathogen Key"
+          },
+          "report_count": {
+            "title": "Report Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "disease_label",
+          "country_count",
+          "report_count"
+        ],
+        "title": "DiseaseOut",
+        "type": "object"
+      },
+      "DiseaseSpreadResponse": {
+        "description": "A disease's full recorded history: who it reached, when, and how widely.",
+        "properties": {
+          "cases_confirmed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cases Confirmed"
+          },
+          "countries": {
+            "items": {
+              "$ref": "#/components/schemas/CountrySpreadOut"
+            },
+            "title": "Countries",
+            "type": "array"
+          },
+          "country_count": {
+            "title": "Country Count",
+            "type": "integer"
+          },
+          "deaths": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deaths"
+          },
+          "disease_family": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disease Family"
+          },
+          "disease_key": {
+            "title": "Disease Key",
+            "type": "string"
+          },
+          "disease_name": {
+            "title": "Disease Name",
+            "type": "string"
+          },
+          "first_published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Published At"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "last_published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Published At"
+          },
+          "note": {
+            "title": "Note",
+            "type": "string"
+          },
+          "pathogen_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pathogen Key"
+          },
+          "report_count": {
+            "title": "Report Count",
+            "type": "integer"
+          },
+          "timeline": {
+            "items": {
+              "$ref": "#/components/schemas/DiseaseTimelineOut"
+            },
+            "title": "Timeline",
+            "type": "array"
+          }
+        },
+        "required": [
+          "disease_key",
+          "disease_name",
+          "report_count",
+          "country_count",
+          "is_active",
+          "note"
+        ],
+        "title": "DiseaseSpreadResponse",
+        "type": "object"
+      },
+      "DiseaseTimelineOut": {
+        "properties": {
+          "cases_confirmed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cases Confirmed"
+          },
+          "country_count": {
+            "title": "Country Count",
+            "type": "integer"
+          },
+          "cumulative_country_count": {
+            "title": "Cumulative Country Count",
+            "type": "integer"
+          },
+          "deaths": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deaths"
+          },
+          "new_countries": {
+            "items": {
+              "type": "string"
+            },
+            "title": "New Countries",
+            "type": "array"
+          },
+          "new_country_count": {
+            "title": "New Country Count",
+            "type": "integer"
+          },
+          "report_count": {
+            "title": "Report Count",
+            "type": "integer"
+          },
+          "year": {
+            "title": "Year",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "year",
+          "report_count",
+          "country_count",
+          "new_country_count",
+          "cumulative_country_count"
+        ],
+        "title": "DiseaseTimelineOut",
         "type": "object"
       },
       "ErrorDetail": {
@@ -1525,6 +2209,61 @@
             ],
             "title": "Confidence"
           },
+          "disease_family": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disease Family"
+          },
+          "disease_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disease Key"
+          },
+          "disease_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disease Label"
+          },
+          "disease_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disease Name"
+          },
+          "disease_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disease Source"
+          },
           "establishment_estimable": {
             "default": true,
             "title": "Establishment Estimable",
@@ -2298,6 +3037,164 @@
         ]
       }
     },
+    "/api/v1/countries/{iso3}/profile": {
+      "get": {
+        "operationId": "get_country_profile_api_v1_countries__iso3__profile_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "iso3",
+            "required": true,
+            "schema": {
+              "maxLength": 3,
+              "minLength": 3,
+              "title": "Iso3",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CountryProfileResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unknown country."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Every disease ever reported for one country",
+        "tags": [
+          "history"
+        ]
+      }
+    },
+    "/api/v1/diseases": {
+      "get": {
+        "operationId": "list_diseases_api_v1_diseases_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DiseaseOut"
+                  },
+                  "title": "Response List Diseases Api V1 Diseases Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Diseases with at least one grounded case count",
+        "tags": [
+          "metadata"
+        ]
+      }
+    },
+    "/api/v1/diseases/history": {
+      "get": {
+        "description": "One row per canonical disease, covering the whole WHO Disease Outbreak News archive rather than only current activity. Wording variants in the source titles are grouped onto one `disease_key`, and `source_labels` lists the variants that were folded in.",
+        "operationId": "list_disease_history_api_v1_diseases_history_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DiseaseHistoryOut"
+                  },
+                  "title": "Response List Disease History Api V1 Diseases History Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Every disease in the archive, past and present",
+        "tags": [
+          "history"
+        ]
+      }
+    },
+    "/api/v1/diseases/{disease_key}/spread": {
+      "get": {
+        "description": "`countries` is ordered by first report, so it reads as the arrival sequence. `timeline` gives per-year reports and newly reached countries, which is what drives the historical playback on the map.",
+        "operationId": "get_disease_spread_api_v1_diseases__disease_key__spread_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "disease_key",
+            "required": true,
+            "schema": {
+              "title": "Disease Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiseaseSpreadResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No such disease."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "How one disease spread: which countries it reached, in what order",
+        "tags": [
+          "history"
+        ]
+      }
+    },
     "/api/v1/model/gravity": {
       "get": {
         "operationId": "get_gravity_model_api_v1_model_gravity_get",
@@ -2537,7 +3434,7 @@
     },
     "/api/v1/risk/{destination_iso3}": {
       "get": {
-        "description": "Returns the three risk quantities for a destination, kept strictly separate:\n\n* `presence` \u2014 whether a source report attributes grounded cases to this country.\n  Flight connectivity is never an input.\n* `importation` \u2014 probability that at least one infected traveller arrives within\n  the horizon.\n* `establishment` \u2014 probability that an introduction leads to sustained local\n  transmission.\n\nEvery numeric field carries a `value_type`, and a field that cannot be computed is\n`null` with an `unavailable_reason`. Bands are **scenario ranges**, not confidence\nintervals; `band_basis` states how each was produced.",
+        "description": "Returns the three risk quantities for a destination, kept strictly separate:\n\n* `presence` \u2014 whether a source report attributes grounded cases to this country.\n  Flight connectivity is never an input.\n\nWith no `disease_key`, `pathogen` or `disease`, the disease is taken from the\ndestination's own most recent report, so two infected countries are each\nanswered about the disease they actually have. `pathogen.disease_source` states\nwhich rule was applied.\n* `importation` \u2014 probability that at least one infected traveller arrives within\n  the horizon.\n* `establishment` \u2014 probability that an introduction leads to sustained local\n  transmission.\n\nEvery numeric field carries a `value_type`, and a field that cannot be computed is\n`null` with an `unavailable_reason`. Bands are **scenario ranges**, not confidence\nintervals; `band_basis` states how each was produced.",
         "operationId": "get_risk_api_v1_risk__destination_iso3__get",
         "parameters": [
           {
@@ -2567,6 +3464,42 @@
               ],
               "description": "Pathogen profile key.",
               "title": "Pathogen"
+            }
+          },
+          {
+            "description": "Disease name as written on the source report.",
+            "in": "query",
+            "name": "disease",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Disease name as written on the source report.",
+              "title": "Disease"
+            }
+          },
+          {
+            "description": "Canonical disease key from /diseases/history. This is the precise filter; it groups the source's wording variants onto one disease.",
+            "in": "query",
+            "name": "disease_key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Canonical disease key from /diseases/history. This is the precise filter; it groups the source's wording variants onto one disease.",
+              "title": "Disease Key"
             }
           },
           {
@@ -2907,6 +3840,26 @@
         "summary": "Data sources with coverage, licence and known limitations",
         "tags": [
           "metadata"
+        ]
+      }
+    },
+    "/data/country_boundaries.geojson": {
+      "get": {
+        "operationId": "country_boundaries_data_country_boundaries_geojson_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/geo+json": {}
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "description": "The processed boundary file has not been built."
+          }
+        },
+        "summary": "Country boundary polygons for the map",
+        "tags": [
+          "reference"
         ]
       }
     },

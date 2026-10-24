@@ -295,3 +295,116 @@ describe('App', () => {
     expect(screen.getByText(/not a safety date/)).toBeInTheDocument();
   });
 });
+
+describe('Disease history and the country record', () => {
+  beforeEach(() => {
+    risk.current = fixtures.riskResponse();
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('opens on the country record, naming the disease reported there', async () => {
+    render(<App />);
+    await waitFor(() => {
+      expect(screen.getByText('Currently reported')).toBeInTheDocument();
+    });
+    const live = screen.getByText('Currently reported').closest<HTMLElement>('.sec');
+    expect(live).not.toBeNull();
+    expect(within(live!).getByText('Test respiratory disease')).toBeInTheDocument();
+  });
+
+  it('separates a country’s past outbreaks from its current one', async () => {
+    render(<App />);
+    await waitFor(() => {
+      expect(screen.getByText('Earlier outbreaks')).toBeInTheDocument();
+    });
+    const past = screen.getByText('Earlier outbreaks').closest<HTMLElement>('.sec');
+    expect(past).not.toBeNull();
+    expect(within(past!).getByText('Test vector-borne disease')).toBeInTheDocument();
+  });
+
+  it('lists every disease in the archive, not only the active ones', async () => {
+    render(<App />);
+    await waitFor(() => {
+      expect(screen.getByLabelText('Search diseases')).toBeInTheDocument();
+    });
+    const rail = screen.getByRole('complementary', { name: 'Diseases' });
+    expect(within(rail).getByText('Test vector-borne disease')).toBeInTheDocument();
+    expect(within(rail).getByText('2016–2017')).toBeInTheDocument();
+  });
+
+  it('filters the disease list by search', async () => {
+    render(<App />);
+    await waitFor(() => {
+      expect(screen.getByLabelText('Search diseases')).toBeInTheDocument();
+    });
+    const rail = screen.getByRole('complementary', { name: 'Diseases' });
+    await userEvent.type(screen.getByLabelText('Search diseases'), 'vector');
+    expect(within(rail).getByText('Test vector-borne disease')).toBeInTheDocument();
+    expect(within(rail).queryByText('Test respiratory disease')).not.toBeInTheDocument();
+  });
+
+  it('shows which countries a disease reached, in arrival order', async () => {
+    render(<App />);
+    await waitFor(() => {
+      expect(screen.getByRole('tab', { name: 'Spread' })).toBeInTheDocument();
+    });
+    await userEvent.click(screen.getByRole('tab', { name: 'Spread' }));
+    await waitFor(() => {
+      expect(screen.getByText('Order of arrival')).toBeInTheDocument();
+    });
+    const list = screen.getByText('Order of arrival').closest<HTMLElement>('.sec');
+    expect(list).not.toBeNull();
+    const names = within(list!)
+      .getAllByRole('button')
+      .map((button) => button.textContent ?? '');
+    expect(names[0]).toContain('Origin Land');
+    expect(names[1]).toContain('Destination Land');
+  });
+
+  it('reports a year-by-year spread, including newly reached countries', async () => {
+    render(<App />);
+    await waitFor(() => {
+      expect(screen.getByRole('tab', { name: 'Spread' })).toBeInTheDocument();
+    });
+    await userEvent.click(screen.getByRole('tab', { name: 'Spread' }));
+    await waitFor(() => {
+      expect(screen.getByText('Year by year')).toBeInTheDocument();
+    });
+    const table = screen.getByText('Year by year').closest<HTMLElement>('.sec');
+    expect(within(table!).getByText('2019')).toBeInTheDocument();
+    expect(within(table!).getByText('2020')).toBeInTheDocument();
+  });
+
+  it('plays the spread back and limits the map to the chosen year', async () => {
+    render(<App />);
+    await waitFor(() => {
+      expect(screen.getByLabelText('Year')).toBeInTheDocument();
+    });
+    const slider = screen.getByLabelText('Year');
+    expect(slider).toHaveAttribute('min', '2019');
+    expect(slider).toHaveAttribute('max', '2020');
+  });
+
+  it('compares two countries and names the disease each one answers about', async () => {
+    render(<App />);
+    await waitFor(() => {
+      expect(screen.getByRole('tab', { name: 'Compare' })).toBeInTheDocument();
+    });
+    await userEvent.click(screen.getByRole('tab', { name: 'Compare' }));
+    await waitFor(() => {
+      expect(screen.getByLabelText('Choose a second country to compare')).toBeInTheDocument();
+    });
+    await userEvent.type(
+      screen.getByLabelText('Choose a second country to compare'),
+      'Destination',
+    );
+    await userEvent.click(screen.getByRole('button', { name: /Destination Land/ }));
+    await waitFor(() => {
+      expect(screen.getAllByText('Already here').length).toBe(2);
+    });
+    expect(screen.getAllByText('Test respiratory disease').length).toBeGreaterThan(1);
+  });
+});

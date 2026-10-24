@@ -60,6 +60,11 @@ export const pathogens: PathogenSummary[] = [
   {
     key: 'respiratory_default',
     label: 'Respiratory pathogen (default)',
+    disease_key: 'test_resp',
+    disease_name: 'Test respiratory disease',
+    disease_label: 'Test respiratory disease',
+    disease_family: 'Respiratory virus',
+    disease_source: 'destination_record',
     confidence: 'moderate',
     establishment_estimable: true,
     establishment_note: 'Branching process applies.',
@@ -68,6 +73,11 @@ export const pathogens: PathogenSummary[] = [
   {
     key: 'vector_borne',
     label: 'Vector-borne (Zika, dengue, chikungunya)',
+    disease_key: 'test_vector',
+    disease_name: 'Test vector-borne disease',
+    disease_label: 'Test vector-borne disease',
+    disease_family: 'Vector-borne',
+    disease_source: 'destination_record',
     confidence: 'indicative_only',
     establishment_estimable: false,
     establishment_note: 'Establishment depends on local vector presence.',

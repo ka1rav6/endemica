@@ -82,7 +82,9 @@ class TestFieldExtraction:
         )
         assert parsed is not None
         assert parsed.values == {"cases_confirmed": 9704, "deaths": 4687}
-        grounded = ground_record(parsed.values, evidence=parsed.sentence, source_text=parsed.sentence)
+        grounded = ground_record(
+            parsed.values, evidence=parsed.sentence, source_text=parsed.sentence
+        )
         assert grounded.usable_fields == {"cases_confirmed": 9704, "deaths": 4687}
 
     def test_declaration_date_is_the_outbreak_start(self) -> None:

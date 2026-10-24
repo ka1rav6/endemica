@@ -30,10 +30,12 @@ function CountryPicker({
     const needle = query.trim().toLowerCase();
     const pool = countries.filter((country) => country.iso3 !== exclude);
     if (!needle) {
-      return pool
-        .filter((country) => (country.diseases?.length ?? 0) > 0)
-        .sort((x, y) => (y.diseases?.length ?? 0) - (x.diseases?.length ?? 0))
-        .slice(0, 6);
+      // Suggest the countries with the richest record first, but never show an
+      // empty picker just because none of them has a report yet.
+      const ranked = [...pool].sort(
+        (x, y) => (y.diseases?.length ?? 0) - (x.diseases?.length ?? 0),
+      );
+      return ranked.slice(0, 6);
     }
     return pool
       .filter(

@@ -34,16 +34,28 @@ def seeded(db_session: Session) -> Session:
     db_session.add_all(
         [
             Country(
-                iso3=ORIGIN, name="Origin Land", population=20_000_000,
-                population_year=2024, centroid_lat=0.0, centroid_lon=10.0,
+                iso3=ORIGIN,
+                name="Origin Land",
+                population=20_000_000,
+                population_year=2024,
+                centroid_lat=0.0,
+                centroid_lon=10.0,
             ),
             Country(
-                iso3=DEST, name="Destination Land", population=50_000_000,
-                population_year=2024, centroid_lat=40.0, centroid_lon=0.0,
+                iso3=DEST,
+                name="Destination Land",
+                population=50_000_000,
+                population_year=2024,
+                centroid_lat=40.0,
+                centroid_lon=0.0,
             ),
             Country(
-                iso3=OTHER, name="Unconnected Land", population=1_000_000,
-                population_year=2024, centroid_lat=-20.0, centroid_lon=50.0,
+                iso3=OTHER,
+                name="Unconnected Land",
+                population=1_000_000,
+                population_year=2024,
+                centroid_lat=-20.0,
+                centroid_lon=50.0,
             ),
         ]
     )
@@ -51,19 +63,28 @@ def seeded(db_session: Session) -> Session:
     db_session.add_all(
         [
             CountryFlow(
-                origin_iso3=ORIGIN, dest_iso3=DEST, passengers_per_day=2000.0,
-                value_type=ValueType.OBSERVED, source="test_observed",
+                origin_iso3=ORIGIN,
+                dest_iso3=DEST,
+                passengers_per_day=2000.0,
+                value_type=ValueType.OBSERVED,
+                source="test_observed",
                 reference_period="2019",
             ),
             CountryFlow(
-                origin_iso3=DEST, dest_iso3=ORIGIN, passengers_per_day=1900.0,
-                value_type=ValueType.OBSERVED, source="test_observed",
+                origin_iso3=DEST,
+                dest_iso3=ORIGIN,
+                passengers_per_day=1900.0,
+                value_type=ValueType.OBSERVED,
+                source="test_observed",
             ),
         ]
     )
     run = IngestionRun(
-        id=uuid.uuid4(), mode="direct_fetch", status="succeeded",
-        started_at=NOW - timedelta(minutes=5), finished_at=NOW,
+        id=uuid.uuid4(),
+        mode="direct_fetch",
+        status="succeeded",
+        started_at=NOW - timedelta(minutes=5),
+        finished_at=NOW,
     )
     db_session.add(run)
     db_session.flush()
@@ -129,9 +150,7 @@ def _risk(client: TestClient, iso3: str = DEST, **params: Any) -> dict[str, Any]
 
 
 class TestThreeQuantitiesStaySeparate:
-    def test_presence_is_reported_only_where_cases_were_reported(
-        self, client: TestClient
-    ) -> None:
+    def test_presence_is_reported_only_where_cases_were_reported(self, client: TestClient) -> None:
         assert _risk(client, ORIGIN)["presence"]["status"] == "reported"
         assert _risk(client, DEST)["presence"]["status"] == "not_reported"
 
@@ -147,7 +166,10 @@ class TestThreeQuantitiesStaySeparate:
     ) -> None:
         low = _risk(client, passenger_scale=0.5)
         high = _risk(client, passenger_scale=4.0)
-        assert high["importation"]["probability"]["central"] > low["importation"]["probability"]["central"]
+        assert (
+            high["importation"]["probability"]["central"]
+            > low["importation"]["probability"]["central"]
+        )
         assert low["presence"]["status"] == high["presence"]["status"]
 
     def test_raising_screening_lowers_importation_but_not_presence(
