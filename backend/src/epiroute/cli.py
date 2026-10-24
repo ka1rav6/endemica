@@ -99,8 +99,8 @@ def cmd_db_status(args: argparse.Namespace) -> int:
     from sqlalchemy import func, inspect, select, text
     from sqlalchemy.exc import SQLAlchemyError
 
-    from epiroute.db.base import Base
     from epiroute.db import models  # noqa: F401
+    from epiroute.db.base import Base
     from epiroute.db.session import session_scope
 
     settings = get_settings()
@@ -230,6 +230,98 @@ def cmd_data_check(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 
 
+def cmd_data_build(args: argparse.Namespace) -> int:
+    from epiroute.datasets.build import build_processed_tables
+
+    _print_header("Building processed tables")
+    result = build_processed_tables(population_year=args.population_year)
+    print(f"  {OK} countries:        {result.countries:>6,}")
+    print(f"  {OK} observed flows:   {result.observed_flows:>6,}")
+    print(f"  {OK} modelled flows:   {result.modelled_flows:>6,}")
+    print(f"  {OK} topology pairs:   {result.topology_pairs:>6,}")
+    if result.gravity is None:
+        print(f"  {WARN} no gravity model fitted (Eurostat table absent)")
+    else:
+        m = result.gravity.test_metrics
+        print(
+            f"  {OK} gravity model:    held-out R2(log) {m.r2_log:.3f}, "
+            f"MAE {m.mae_log10:.3f} log10, band x{result.gravity.uncertainty_factor:.1f}"
+        )
+    for path in result.written:
+        print(f"      wrote {path.name}")
+    return 0
+
+
+def cmd_data_load(_args: argparse.Namespace) -> int:
+    from epiroute.datasets.load import load_reference_data
+    from epiroute.db.session import session_scope
+
+    _print_header("Loading reference data into PostgreSQL")
+    with session_scope() as session:
+        result = load_reference_data(session)
+    print(f"  {OK} countries:         {result.countries:>6,}")
+    print(f"  {OK} country flows:     {result.flows:>6,}")
+    print(f"  {OK} dataset versions:  {result.dataset_versions:>6,}")
+    print(f"  {OK} gravity fits:      {result.gravity_fits:>6,}")
+    return 0
+
+
+def cmd_model_fit(args: argparse.Namespace) -> int:
+    from epiroute.datasets.build import build_processed_tables
+    from epiroute.datasets.load import load_gravity_fit
+    from epiroute.db.session import session_scope
+
+    _print_header("Fitting the passenger-flow gravity model")
+    result = build_processed_tables(population_year=args.population_year)
+    if result.gravity is None:
+        print(f"  {BAD} no observed passenger flows available", file=sys.stderr)
+        return 1
+    fit = result.gravity
+    print(f"  specification: {fit.specification}")
+    print(f"  training:      {fit.training_source} ({fit.training_period})")
+    print(f"  rows:          {fit.n_train} train / {fit.n_test} held out (seed {fit.random_seed})")
+    print(f"  intercept:     {fit.intercept:+.4f}")
+    for name, value in fit.coefficients.items():
+        print(f"    {name:<22} {value:+.4f}")
+    _print_header("Held-out performance (measured, not asserted)")
+    m = fit.test_metrics
+    print(f"  R2 on log10 scale      {m.r2_log:.4f}")
+    print(f"  MAE  (log10)           {m.mae_log10:.4f}")
+    print(f"  RMSE (log10)           {m.rmse_log10:.4f}")
+    print(f"  median ratio error     x{m.median_ratio_error:.2f}")
+    print(f"  within a factor of 2   {m.within_factor_2:.1%}")
+    print(f"  within a factor of 5   {m.within_factor_5:.1%}")
+    print(f"  within a factor of 10  {m.within_factor_10:.1%}")
+    print(f"  residual sigma(log10)  {fit.residual_sigma_log10:.4f}")
+    print(f"  -> band factor         x{fit.uncertainty_factor:.1f}")
+    if not args.no_db:
+        with session_scope() as session:
+            load_gravity_fit(session, get_settings().processed_data_dir / "gravity_fit.json")
+        print(f"\n  {OK} fit stored in gravity_model_fits")
+    return 0
+
+
+def cmd_model_report(_args: argparse.Namespace) -> int:
+    path = get_settings().processed_data_dir / "gravity_fit.json"
+    if not path.exists():
+        print(f"{BAD} no gravity fit found; run `just model-fit`", file=sys.stderr)
+        return 1
+    print(json.dumps(json.loads(path.read_text(encoding="utf-8")), indent=2))
+    return 0
+
+
+def cmd_data_validate(_args: argparse.Namespace) -> int:
+    from epiroute.datasets.validate import validate_processed_tables
+
+    _print_header("Validating processed tables")
+    report = validate_processed_tables()
+    for check in report.checks:
+        marker = OK if check.passed else BAD
+        print(f"  {marker} {check.name:<44} {check.detail}")
+    print(f"\n{report.passed_count}/{len(report.checks)} checks passed")
+    return 0 if report.ok else 1
+
+
 def cmd_openapi(args: argparse.Namespace) -> int:
     """Write the OpenAPI schema to a file."""
     import pathlib
@@ -278,6 +370,24 @@ def build_parser() -> argparse.ArgumentParser:
     p = subparsers.add_parser("data-check", help="Report dataset presence and provenance.")
     p.add_argument("--verbose", action="store_true", help="Include full provenance.")
     p.set_defaults(func=cmd_data_check)
+
+    p = subparsers.add_parser("data-build", help="Build processed tables from data/raw.")
+    p.add_argument("--population-year", type=int, default=2024)
+    p.set_defaults(func=cmd_data_build)
+
+    p = subparsers.add_parser("data-load", help="Load processed tables into PostgreSQL.")
+    p.set_defaults(func=cmd_data_load)
+
+    p = subparsers.add_parser("data-validate", help="Validate the processed tables.")
+    p.set_defaults(func=cmd_data_validate)
+
+    p = subparsers.add_parser("model-fit", help="Fit the gravity model and report held-out error.")
+    p.add_argument("--population-year", type=int, default=2024)
+    p.add_argument("--no-db", action="store_true", help="Do not store the fit in the database.")
+    p.set_defaults(func=cmd_model_fit)
+
+    p = subparsers.add_parser("model-report", help="Print the stored gravity-model report.")
+    p.set_defaults(func=cmd_model_report)
 
     p = subparsers.add_parser("openapi", help="Write the OpenAPI schema to a file.")
     p.add_argument("--output", required=True, help="Destination path.")

@@ -110,9 +110,7 @@ def fetch_dataset(
     logger.info("downloading dataset", extra={"dataset": key, "url": spec.url})
     # Write to a sibling temporary file so the move into place is atomic on the
     # same filesystem; a failed transfer then leaves the previous file intact.
-    fd, temp_name = tempfile.mkstemp(
-        dir=target.parent, prefix=f".{spec.filename}.", suffix=".part"
-    )
+    fd, temp_name = tempfile.mkstemp(dir=target.parent, prefix=f".{spec.filename}.", suffix=".part")
     temporary = Path(temp_name)
     written = 0
     try:
