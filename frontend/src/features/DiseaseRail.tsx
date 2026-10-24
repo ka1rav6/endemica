@@ -2,10 +2,10 @@ import { useMemo, useState } from 'react';
 import type { DiseaseHistory } from '@/types/api';
 import { formatCount } from '@/lib/format';
 
-type Scope = 'all' | 'major' | 'recent';
+type Sort = 'all' | 'major' | 'recent';
 
-const SCOPES: { id: Scope; label: string; title: string }[] = [
-  { id: 'all', label: 'A–Z', title: 'Every disease in the archive' },
+const SORTS: { id: Sort; label: string; title: string }[] = [
+  { id: 'all', label: 'A–Z', title: 'Every disease in the archive, by name' },
   { id: 'major', label: 'Widest', title: 'Reached the most countries' },
   { id: 'recent', label: 'Newest', title: 'Most recently reported first' },
 ];
@@ -59,7 +59,7 @@ export function DiseaseRail({
   activeKeys,
 }: Props) {
   const [query, setQuery] = useState('');
-  const [scope, setScope] = useState<Scope>('all');
+  const [sort, setSort] = useState<Sort>('all');
 
   const span = useMemo(() => {
     const years = diseases.flatMap((disease) =>
@@ -83,16 +83,19 @@ export function DiseaseRail({
           disease.source_labels.some((label) => label.toLowerCase().includes(needle)),
       );
     }
-    if (scope === 'major') {
+    if (activeMode) {
+      list = list.filter((disease) => activeKeys.has(disease.disease_key));
+    }
+    if (sort === 'major') {
       list = [...list].sort((a, b) => b.country_count - a.country_count);
     }
-    if (scope === 'recent') {
+    if (sort === 'recent') {
       list = [...list].sort((a, b) =>
         (b.last_published_at ?? '').localeCompare(a.last_published_at ?? ''),
       );
     }
     return list;
-  }, [diseases, query, scope]);
+  }, [diseases, query, sort, activeMode, activeKeys]);
 
   return (
     <aside className="rail" aria-label="Diseases">
@@ -123,46 +126,52 @@ export function DiseaseRail({
         </label>
       </div>
 
-      <button
-        type="button"
-        className={activeMode ? 'railmode railmode--on' : 'railmode'}
-        aria-pressed={activeMode}
-        onClick={() => {
-          onActiveMode(!activeMode);
-        }}
-      >
-        <span className="railmode__top">
+      <div className="rail__controls">
+        <button
+          type="button"
+          className={activeMode ? 'filter filter--on' : 'filter'}
+          aria-pressed={activeMode}
+          title={`Show only what is being reported now, and combine all of it into one view (last ${activeWindowDays} days)`}
+          onClick={() => {
+            onActiveMode(!activeMode);
+          }}
+        >
           <span
             className={activeMode ? 'dot dot--pulse' : 'dot'}
             style={{ color: activeMode ? 'var(--hot)' : 'var(--ink-4)' }}
             aria-hidden="true"
           />
-          <span className="railmode__title">Everything active now</span>
-          <span className="railmode__count num">{activeKeys.size}</span>
-        </span>
-        <span className="railmode__note">
-          {activeMode
-            ? `On — the map and every estimate combine all ${activeKeys.size} disease${activeKeys.size === 1 ? '' : 's'} reported in the last ${activeWindowDays} days. Pick one below to narrow it.`
-            : `Combine every disease reported in the last ${activeWindowDays} days into one picture.`}
-        </span>
-      </button>
+          Active
+          <span className="filter__count num">{activeKeys.size}</span>
+        </button>
 
-      <div className="rail__filters" role="group" aria-label="Sort diseases">
-        {SCOPES.map((entry) => (
-          <button
-            key={entry.id}
-            type="button"
-            className="segment"
-            aria-pressed={scope === entry.id}
-            title={entry.title}
-            onClick={() => {
-              setScope(entry.id);
-            }}
-          >
-            {entry.label}
-          </button>
-        ))}
+        <span className="rail__sep" aria-hidden="true" />
+
+        <div className="rail__sorts" role="group" aria-label="Sort diseases">
+          {SORTS.map((entry) => (
+            <button
+              key={entry.id}
+              type="button"
+              className="segment"
+              aria-pressed={sort === entry.id}
+              title={entry.title}
+              onClick={() => {
+                setSort(entry.id);
+              }}
+            >
+              {entry.label}
+            </button>
+          ))}
+        </div>
       </div>
+
+      {activeMode && (
+        <p className="rail__note">
+          The map and every estimate combine all {activeKeys.size} disease
+          {activeKeys.size === 1 ? '' : 's'} reported in the last {activeWindowDays} days. Pick one
+          below to narrow it.
+        </p>
+      )}
 
       <div className="rail__list">
         {visible.length === 0 && (

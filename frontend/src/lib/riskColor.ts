@@ -31,9 +31,7 @@ function mixHex(from: string, to: string, fraction: number): string {
   return `#${[red, green, blue].map((value) => value.toString(16).padStart(2, '0')).join('')}`;
 }
 
-/** Colour for a 0–10 risk score. Out-of-range values are clamped. */
-export function riskColor(score: number): string {
-  const stops = RISK_COLOR_STOPS;
+function colorFromStops(stops: readonly (readonly [number, string])[], score: number): string {
   const first = stops[0];
   const last = stops[stops.length - 1];
   if (!first || !last || !Number.isFinite(score)) return first?.[1] ?? '#1e9d55';
@@ -51,14 +49,54 @@ export function riskColor(score: number): string {
   return last[1];
 }
 
+/** Colour for a 0–10 risk score. Out-of-range values are clamped. */
+export function riskColor(score: number): string {
+  return colorFromStops(RISK_COLOR_STOPS, score);
+}
+
 /**
- * MapLibre interpolate expression using the same stops as {@link riskColor}.
+ * Order of arrival, which is a sequence and not a danger reading.
+ *
+ * It needs its own ramp: a country that has an outbreak must never be drawn in
+ * the green that means "low risk" on the ramp above, however early it reported.
+ * Pale amber through orange into the same deep red the risk ramp tops out at,
+ * so the warmest colour means the same thing on both.
+ */
+export const ARRIVAL_COLOR_STOPS: readonly (readonly [number, string])[] = [
+  [0, '#ffe0a3'],
+  [2, '#ffc266'],
+  [4, '#ff9a45'],
+  [6, '#f4703a'],
+  [8, '#e04a32'],
+  [10, '#c41919'],
+];
+
+/** Colour for a 0–10 arrival position. Out-of-range values are clamped. */
+export function arrivalColor(position: number): string {
+  return colorFromStops(ARRIVAL_COLOR_STOPS, position);
+}
+
+/**
+ * MapLibre interpolate expression over `stops`.
  * `input` is a numeric expression already on the 0–10 scale.
  */
-export function riskFillExpression(input: unknown[]): unknown[] {
+export function rampExpression(
+  stops: readonly (readonly [number, string])[],
+  input: unknown[],
+): unknown[] {
   const expression: unknown[] = ['interpolate', ['linear'], input];
-  for (const [stop, color] of RISK_COLOR_STOPS) {
+  for (const [stop, color] of stops) {
     expression.push(stop, color);
   }
   return expression;
+}
+
+/** Same stops as {@link riskColor}. */
+export function riskFillExpression(input: unknown[]): unknown[] {
+  return rampExpression(RISK_COLOR_STOPS, input);
+}
+
+/** Same stops as {@link arrivalColor}. */
+export function arrivalFillExpression(input: unknown[]): unknown[] {
+  return rampExpression(ARRIVAL_COLOR_STOPS, input);
 }

@@ -123,9 +123,15 @@ async function renderOnRiskTab() {
   });
 }
 
+/** The rail's Active filter, which is on when the app lands. */
+async function activeFilter(): Promise<HTMLElement> {
+  const rail = await waitFor(() => screen.getByRole('complementary', { name: 'Diseases' }));
+  return within(rail).getByRole('button', { name: /^Active/ });
+}
+
 /** Leave the combined active view, which is where the app lands. */
 async function leaveActiveMode() {
-  const toggle = await waitFor(() => screen.getByRole('button', { name: /Everything active now/ }));
+  const toggle = await activeFilter();
   if (toggle.getAttribute('aria-pressed') === 'true') await userEvent.click(toggle);
 }
 
@@ -371,6 +377,7 @@ describe('Disease history and the country record', () => {
 
   it('lists every disease in the archive, not only the active ones', async () => {
     render(<App />);
+    await leaveActiveMode();
     await waitFor(() => {
       expect(screen.getByLabelText('Search diseases')).toBeInTheDocument();
     });
@@ -381,6 +388,7 @@ describe('Disease history and the country record', () => {
 
   it('filters the disease list by search', async () => {
     render(<App />);
+    await leaveActiveMode();
     await waitFor(() => {
       expect(screen.getByLabelText('Search diseases')).toBeInTheDocument();
     });
@@ -469,11 +477,8 @@ describe('The all-active view', () => {
   it('lands on the combined active view and asks the model for it', async () => {
     const { getRisk } = await import('@/services/epiroute');
     render(<App />);
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Everything active now/ })).toHaveAttribute(
-        'aria-pressed',
-        'true',
-      );
+    await waitFor(async () => {
+      expect(await activeFilter()).toHaveAttribute('aria-pressed', 'true');
     });
     await waitFor(() => {
       const last = vi.mocked(getRisk).mock.calls.at(-1);
@@ -493,11 +498,8 @@ describe('The all-active view', () => {
     render(<App />);
     const rail = await waitFor(() => screen.getByRole('complementary', { name: 'Diseases' }));
     await userEvent.click(within(rail).getByText('Test respiratory disease'));
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Everything active now/ })).toHaveAttribute(
-        'aria-pressed',
-        'false',
-      );
+    await waitFor(async () => {
+      expect(await activeFilter()).toHaveAttribute('aria-pressed', 'false');
     });
     await waitFor(() => {
       const last = vi.mocked(getRisk).mock.calls.at(-1);
@@ -509,10 +511,23 @@ describe('The all-active view', () => {
   it('switches back to the combined view when the toggle is pressed again', async () => {
     render(<App />);
     await leaveActiveMode();
-    const toggle = screen.getByRole('button', { name: /Everything active now/ });
+    const toggle = await activeFilter();
     await userEvent.click(toggle);
     await waitFor(() => {
       expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    });
+  });
+
+  it('shows only the active diseases while the filter is on', async () => {
+    render(<App />);
+    const rail = await waitFor(() => screen.getByRole('complementary', { name: 'Diseases' }));
+    await waitFor(() => {
+      expect(within(rail).getByText('Test respiratory disease')).toBeInTheDocument();
+    });
+    expect(within(rail).queryByText('Test vector-borne disease')).not.toBeInTheDocument();
+    await leaveActiveMode();
+    await waitFor(() => {
+      expect(within(rail).getByText('Test vector-borne disease')).toBeInTheDocument();
     });
   });
 });

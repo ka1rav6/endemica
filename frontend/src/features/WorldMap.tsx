@@ -16,7 +16,13 @@ setWorkerUrl(maplibreWorkerUrl);
 import type { Feature, FeatureCollection, LineString, Point as GeoPoint } from 'geojson';
 import { formatCount, formatPassengers } from '@/lib/format';
 import { greatCircleLine } from '@/lib/geo';
-import { RISK_COLOR_STOPS, riskColor, riskFillExpression } from '@/lib/riskColor';
+import {
+  ARRIVAL_COLOR_STOPS,
+  RISK_COLOR_STOPS,
+  arrivalColor,
+  arrivalFillExpression,
+  riskFillExpression,
+} from '@/lib/riskColor';
 import type { MapSpreadEntry } from '@/lib/spread';
 import { arcsToCollection, spreadArcs, type SpreadArc } from '@/lib/spreadFlow';
 import type { Country, OriginContribution, Route } from '@/types/api';
@@ -202,6 +208,9 @@ function routePopup(properties: Record<string, unknown>): HTMLElement {
   return root;
 }
 
+// Order matters. A country that is already reporting is drawn as such before
+// anything else is considered, so it can never fall through onto the green end
+// of the risk ramp and read as safe.
 const fillColour = [
   'case',
   [
@@ -210,10 +219,12 @@ const fillColour = [
     ['boolean', ['feature-state', 'hasRisk'], false],
   ],
   riskFillExpression(['coalesce', ['feature-state', 'risk'], 0]),
+  ['boolean', ['feature-state', 'activeLoad'], false],
+  riskFillExpression(['*', ['coalesce', ['feature-state', 'order'], 0], 10]),
+  ['boolean', ['feature-state', 'affected'], false],
+  arrivalFillExpression(['*', ['coalesce', ['feature-state', 'order'], 0], 10]),
   ['boolean', ['feature-state', 'forecast'], false],
   riskFillExpression(['*', ['coalesce', ['feature-state', 'probability'], 0], 10]),
-  ['boolean', ['feature-state', 'affected'], false],
-  riskFillExpression(['*', ['coalesce', ['feature-state', 'order'], 0], 10]),
   ['boolean', ['feature-state', 'hasAnyReport'], false],
   C.landQuiet,
   C.land,
@@ -677,7 +688,7 @@ export function WorldMap({
       const danger = activeMode ? 0.5 + (1 - entry.arrivalShare) * 0.5 : entry.arrivalShare;
       map.setFeatureState(
         { source: 'countries', id: entry.iso3 },
-        { affected: true, order: danger },
+        { affected: true, activeLoad: activeMode, order: danger },
       );
     }
     for (const entry of forecast) {
@@ -830,7 +841,7 @@ export function WorldMap({
               {activeMode ? 'Diseases reported' : 'When it arrived'}
             </span>
             <span className="legend__ramp" aria-hidden="true">
-              {RISK_COLOR_STOPS.map(([stop, colour]) => (
+              {(activeMode ? RISK_COLOR_STOPS : ARRIVAL_COLOR_STOPS).map(([stop, colour]) => (
                 <i key={stop} style={{ background: colour }} />
               ))}
             </span>
@@ -840,7 +851,7 @@ export function WorldMap({
             </span>
             {!activeMode && yearCeiling !== null && (
               <span className="legend__row">
-                <span className="swatch swatch--line" style={{ background: riskColor(7) }} />
+                <span className="swatch swatch--line" style={{ background: arrivalColor(7) }} />
                 Growth into {yearCeiling}
               </span>
             )}
