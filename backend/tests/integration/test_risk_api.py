@@ -124,7 +124,8 @@ def _risk(client: TestClient, iso3: str = DEST, **params: Any) -> dict[str, Any]
     params.setdefault("pathogen", "respiratory_default")
     response = client.get(f"/api/v1/risk/{iso3}", params=params)
     assert response.status_code == 200, response.text
-    return response.json()
+    body: dict[str, Any] = response.json()
+    return body
 
 
 class TestThreeQuantitiesStaySeparate:
