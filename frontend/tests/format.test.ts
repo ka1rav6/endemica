@@ -87,7 +87,9 @@ describe('formatCount', () => {
   });
 
   it('groups thousands', () => {
-    expect(formatCount(1234567)).toMatch(/1.234.567/);
+    const rendered = formatCount(1234567);
+    expect(rendered.replace(/\D/g, '')).toBe('1234567');
+    expect(rendered).not.toBe('1234567');
   });
 });
 

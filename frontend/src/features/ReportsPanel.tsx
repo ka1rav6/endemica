@@ -115,9 +115,10 @@ export function ReportsPanel({ reports, onCountrySelect }: Props) {
     const controller = new AbortController();
     setLoading(true);
     setError(null);
+    setDetail(null);
     getOutbreak(expandedId, controller.signal)
       .then((value) => {
-        setDetail(value);
+        if (!controller.signal.aborted) setDetail(value);
       })
       .catch((cause: unknown) => {
         if (!controller.signal.aborted) setError(cause);
@@ -148,6 +149,9 @@ export function ReportsPanel({ reports, onCountrySelect }: Props) {
         {reports.map((report) => {
           const expanded = expandedId === report.id;
           const primaryCountry = report.countries[0];
+          const primaryName =
+            report.observations.find((observation) => observation.country_iso3 === primaryCountry)
+              ?.country_name ?? primaryCountry;
           return (
             <li key={report.id}>
               <button
@@ -177,7 +181,7 @@ export function ReportsPanel({ reports, onCountrySelect }: Props) {
                 <div style={{ padding: '0 10px 10px' }}>
                   {loading && <div className="spinner" aria-label="Loading report detail" />}
                   {error !== null && <ErrorNotice error={error} context="Loading the report" />}
-                  {detail && <ReportDetail report={detail} />}
+                  {detail && detail.id === report.id && <ReportDetail report={detail} />}
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
                     {report.provenance.source_url && (
                       <a
@@ -198,7 +202,7 @@ export function ReportsPanel({ reports, onCountrySelect }: Props) {
                           onCountrySelect(primaryCountry);
                         }}
                       >
-                        Select {primaryCountry} on the map
+                        Show {primaryName} on the map
                       </button>
                     )}
                   </div>

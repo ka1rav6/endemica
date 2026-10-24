@@ -17,8 +17,5 @@ export default defineConfig({
     },
   },
   build: { outDir: 'dist', sourcemap: true },
-  // maplibre-gl ships its worker as a classic script. Leaving Vite's default
-  // worker format alone, and letting it pre-bundle the package normally, is
-  // what makes the worker URL resolve in dev.
-  optimizeDeps: { include: ['maplibre-gl'] },
+  optimizeDeps: { exclude: ['maplibre-gl'] },
 });

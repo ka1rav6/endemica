@@ -12,7 +12,7 @@ export class ApiError extends Error {
     this.name = 'ApiError';
     this.status = status;
     this.code = body.code;
-    this.details = body.details;
+    this.details = body.details ?? [];
   }
 }
 
@@ -21,6 +21,33 @@ export class NetworkError extends Error {
     super(message);
     this.name = 'NetworkError';
   }
+}
+
+async function readPayload(response: Response): Promise<unknown> {
+  const text = await response.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    if (!response.ok) {
+      throw new ApiError(response.status, {
+        code: 'unexpected_error',
+        message: `The backend returned HTTP ${response.status}.`,
+        details: [],
+      });
+    }
+    throw new NetworkError('The backend returned a response that was not valid JSON.');
+  }
+}
+
+function throwIfNotOk(response: Response, payload: unknown): void {
+  if (response.ok) return;
+  if (isApiErrorBody(payload)) throw new ApiError(response.status, payload);
+  throw new ApiError(response.status, {
+    code: 'unexpected_error',
+    message: `The backend returned HTTP ${response.status}.`,
+    details: [],
+  });
 }
 
 function isApiErrorBody(value: unknown): value is ApiErrorBody {
@@ -85,27 +112,8 @@ export async function apiGet<T>(
     clearTimeout(timeout);
   }
 
-  let payload: unknown = null;
-  const text = await response.text();
-  if (text) {
-    try {
-      payload = JSON.parse(text);
-    } catch {
-      throw new NetworkError('The backend returned a response that was not valid JSON.');
-    }
-  }
-
-  if (!response.ok) {
-    if (isApiErrorBody(payload)) {
-      throw new ApiError(response.status, payload);
-    }
-    throw new ApiError(response.status, {
-      code: 'unexpected_error',
-      message: `The backend returned HTTP ${response.status}.`,
-      details: [],
-    });
-  }
-
+  const payload = await readPayload(response);
+  throwIfNotOk(response, payload);
   return payload as T;
 }
 
@@ -118,6 +126,11 @@ export async function apiPost<T>(
   const timeout = setTimeout(() => {
     controller.abort();
   }, options?.timeoutMs ?? 300_000);
+  if (options?.signal) {
+    options.signal.addEventListener('abort', () => {
+      controller.abort();
+    });
+  }
 
   let response: Response;
   try {
@@ -128,7 +141,9 @@ export async function apiPost<T>(
       signal: controller.signal,
     });
   } catch (cause) {
-    if (controller.signal.aborted) throw new NetworkError('The request timed out.');
+    if (controller.signal.aborted && !options?.signal?.aborted) {
+      throw new NetworkError('The request timed out.');
+    }
     throw new NetworkError(
       cause instanceof Error ? cause.message : 'The backend could not be reached.',
     );
@@ -136,16 +151,7 @@ export async function apiPost<T>(
     clearTimeout(timeout);
   }
 
-  const text = await response.text();
-  const payload: unknown = text ? JSON.parse(text) : null;
-
-  if (!response.ok) {
-    if (isApiErrorBody(payload)) throw new ApiError(response.status, payload);
-    throw new ApiError(response.status, {
-      code: 'unexpected_error',
-      message: `The backend returned HTTP ${response.status}.`,
-      details: [],
-    });
-  }
+  const payload = await readPayload(response);
+  throwIfNotOk(response, payload);
   return payload as T;
 }

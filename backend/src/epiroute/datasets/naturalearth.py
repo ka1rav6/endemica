@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -61,23 +62,48 @@ def _polygons(geometry: dict[str, object]) -> list[list[list[float]]]:
     return []
 
 
+def _unwrap_ring(ring: list[list[float]]) -> list[list[float]]:
+    """Keep longitudes continuous so a date-line ring is not treated as a world-spanning one."""
+    if not ring:
+        return []
+    unwrapped: list[list[float]] = [[ring[0][0], ring[0][1]]]
+    offset = 0.0
+    previous = ring[0][0]
+    for point in ring[1:]:
+        lon = point[0] + offset
+        while lon - previous > 180:
+            lon -= 360
+            offset -= 360
+        while lon - previous < -180:
+            lon += 360
+            offset += 360
+        unwrapped.append([lon, point[1]])
+        previous = lon
+    return unwrapped
+
+
+def _wrap_lon(lon: float) -> float:
+    return (lon + 180.0) % 360.0 - 180.0
+
+
 def geometry_centroid(geometry: dict[str, object]) -> tuple[float, float]:
-    best_lon = best_lat = 0.0
-    total_area = 0.0
-    weighted_lon = weighted_lat = 0.0
+    sin_sum = cos_sum = lat_sum = total_area = 0.0
+    fallback_lat = fallback_lon = 0.0
     for ring in _polygons(geometry):
         if len(ring) < 4:
             continue
-        lon, lat, area = _ring_centroid(ring)
-        if area > 0:
-            total_area += area
-            weighted_lon += lon * area
-            weighted_lat += lat * area
-        elif total_area == 0.0:
-            best_lon, best_lat = lon, lat
+        lon, lat, area = _ring_centroid(_unwrap_ring(ring))
+        if area <= 0:
+            fallback_lat, fallback_lon = lat, _wrap_lon(lon)
+            continue
+        phi = math.radians(lon)
+        sin_sum += math.sin(phi) * area
+        cos_sum += math.cos(phi) * area
+        lat_sum += lat * area
+        total_area += area
     if total_area > 0:
-        return weighted_lat / total_area, weighted_lon / total_area
-    return best_lat, best_lon
+        return lat_sum / total_area, _wrap_lon(math.degrees(math.atan2(sin_sum, cos_sum)))
+    return fallback_lat, fallback_lon
 
 
 def load_country_geometries(path: Path) -> list[CountryGeometry]:

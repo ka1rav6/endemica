@@ -31,9 +31,14 @@ export const VALUE_TYPE_DESCRIPTION: Record<ValueType, string> = {
 
 export function formatPercent(value: number | null, digits = 1): string {
   if (value === null || !Number.isFinite(value)) return '—';
-  if (value > 0 && value < 0.001) return '< 0.1%';
   if (value > 0.9999) return '> 99.99%';
-  return `${(value * 100).toFixed(digits)}%`;
+  if (value > 0 && value < 0.001) return '< 0.1%';
+  const rendered = (value * 100).toFixed(digits);
+  if (value > 0 && Number(rendered) === 0) {
+    const unit = digits === 0 ? '1' : `0.${'0'.repeat(Math.max(digits - 1, 0))}1`;
+    return `< ${unit}%`;
+  }
+  return `${rendered}%`;
 }
 
 export function formatBand(band: BandedQuantity, digits = 1): string {

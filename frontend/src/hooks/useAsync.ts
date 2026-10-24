@@ -24,6 +24,7 @@ export function useAsync<T>(
     const controller = new AbortController();
     let cancelled = false;
     setLoading(true);
+    setError(null);
 
     load(controller.signal)
       .then((value) => {

@@ -51,7 +51,7 @@ describe('apiGet', () => {
 
   it('raises ApiError even when the body is not the expected envelope', async () => {
     mockFetch(new Response('<html>502</html>', { status: 502 }));
-    await expect(apiGet('/x')).rejects.toBeInstanceOf(NetworkError);
+    await expect(apiGet('/x')).rejects.toBeInstanceOf(ApiError);
   });
 
   it('raises NetworkError when the backend is unreachable', async () => {

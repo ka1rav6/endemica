@@ -14,8 +14,10 @@ interface Props {
 
 function BandBar({ band }: { band: BandedQuantity }) {
   if (band.low === null || band.high === null) return null;
-  const left = Math.min(band.low, 1) * 100;
-  const width = Math.max(Math.min(band.high, 1) * 100 - left, 0.8);
+  const start = Math.max(0, Math.min(Math.min(band.low, band.high), 1));
+  const end = Math.max(0, Math.min(Math.max(band.low, band.high), 1));
+  const left = start * 100;
+  const width = Math.max((end - start) * 100, 0.8);
   const central = band.central === null ? null : Math.min(band.central, 1) * 100;
   return (
     <div

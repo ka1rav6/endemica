@@ -73,14 +73,20 @@ export default function App() {
     setSelectedIso3(withOutbreak?.iso3 ?? countryList[0]?.iso3 ?? null);
   }, [countryList, selectedIso3]);
 
+  const activeRisk =
+    risk.data && selectedIso3 && risk.data.destination_iso3 === selectedIso3 ? risk.data : null;
+
   const originIso3 = useMemo(
-    () => new Set((risk.data?.importation.top_origins ?? []).map((origin) => origin.origin_iso3)),
-    [risk.data],
+    () => new Set((activeRisk?.importation.top_origins ?? []).map((origin) => origin.origin_iso3)),
+    [activeRisk],
   );
 
   const relevantRoutes = useMemo(
-    () => (routes.data?.items ?? []).filter((route) => originIso3.has(route.origin_iso3)),
-    [routes.data, originIso3],
+    () =>
+      (routes.data?.items ?? []).filter(
+        (route) => route.dest_iso3 === selectedIso3 && originIso3.has(route.origin_iso3),
+      ),
+    [routes.data, originIso3, selectedIso3],
   );
 
   const handleIngest = useCallback(() => {
@@ -106,11 +112,11 @@ export default function App() {
       });
   }, []);
 
-  const staleSources = (risk.data?.data ?? []).filter((entry) =>
+  const staleSources = (activeRisk?.data ?? []).filter((entry) =>
     isStale(entry.retrieved_at, MAX_DATA_AGE_DAYS),
   );
 
-  const establishmentEstimable = risk.data?.pathogen.establishment_estimable ?? true;
+  const establishmentEstimable = activeRisk?.pathogen.establishment_estimable ?? true;
 
   return (
     <div className="app">
@@ -157,7 +163,7 @@ export default function App() {
           countries={countryList}
           selectedIso3={selectedIso3}
           onSelect={setSelectedIso3}
-          origins={risk.data?.importation.top_origins ?? []}
+          origins={activeRisk?.importation.top_origins ?? []}
           routes={relevantRoutes}
         />
 
@@ -191,19 +197,19 @@ export default function App() {
 
           {tab === 'risk' && (
             <>
-              {risk.loading && !risk.data && (
+              {risk.loading && !activeRisk && (
                 <div className="panel__section" style={{ display: 'flex', gap: 8 }}>
                   <div className="spinner" />
                   <span style={{ color: 'var(--text-muted)' }}>Computing risk…</span>
                 </div>
               )}
-              {risk.error !== null && (
+              {risk.error !== null && !activeRisk && (
                 <div className="panel__section">
                   <ErrorNotice error={risk.error} onRetry={risk.reload} context="Computing risk" />
                 </div>
               )}
-              {risk.data && <RiskPanel risk={risk.data} />}
-              {!risk.loading && !risk.data && risk.error === null && (
+              {activeRisk && <RiskPanel risk={activeRisk} />}
+              {!risk.loading && !activeRisk && risk.error === null && (
                 <div className="panel__section">
                   <p className="empty">Choose a destination to see its risk breakdown.</p>
                 </div>

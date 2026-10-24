@@ -16,6 +16,19 @@ export function TopBar({ countries, selectedIso3, onSelect, health, onIngest, in
   return (
     <header className="topbar">
       <div className="topbar__brand">
+        <span className="mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" width="22" height="22">
+            <circle cx="16" cy="16" r="13" fill="none" stroke="currentColor" strokeWidth="1.4" />
+            <path
+              d="M5 19c4.2-7 7.2-1.5 11.2-8.2C19.6 6.2 23 8 27 13"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+            />
+            <circle cx="23.2" cy="10.2" r="2.1" fill="currentColor" />
+          </svg>
+        </span>
         <h1 className="topbar__title">EpiRoute</h1>
         <span className="topbar__tagline">
           sourced outbreaks · air-travel connectivity · separated risks

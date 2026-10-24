@@ -76,7 +76,13 @@ vi.mock('@/services/epiroute', () => ({
     }),
   ),
   getRoutes: vi.fn(() => Promise.resolve(fixturesRef.routes)),
-  getRisk: vi.fn(() => Promise.resolve(risk.current)),
+  getRisk: vi.fn((iso3: string) =>
+    Promise.resolve(
+      risk.current && typeof risk.current === 'object'
+        ? { ...risk.current, destination_iso3: iso3 }
+        : risk.current,
+    ),
+  ),
   triggerIngest: vi.fn(() =>
     Promise.resolve({
       run_id: 'run-2',
@@ -215,7 +221,9 @@ describe('App', () => {
     await waitFor(() => {
       expect(screen.getByText(/rejected by the validation gate/)).toBeInTheDocument();
     });
-    expect(screen.getByText(/does not appear anywhere in the retrieved source text/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/does not appear anywhere in the retrieved source text/),
+    ).toBeInTheDocument();
   });
 
   it('shows the model report with its caveat on the sources tab', async () => {
