@@ -17,6 +17,7 @@ from fastapi.responses import JSONResponse
 
 from epiroute import __version__
 from epiroute.api import health as health_router
+from epiroute.api import static_data as static_data_router
 from epiroute.api.v1 import admin as admin_router
 from epiroute.api.v1 import countries as countries_router
 from epiroute.api.v1 import meta as meta_router
@@ -178,6 +179,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     register_exception_handlers(app)
     app.include_router(health_router.router)
+    app.include_router(static_data_router.router)
 
     api_prefix = "/api/v1"
     app.include_router(outbreaks_router.router, prefix=api_prefix)
