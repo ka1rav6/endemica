@@ -233,4 +233,8 @@ def fetch_full_archive(
                 break
             logger.info("fetched DON page", extra={"skip": skip, "items": len(items)})
 
-    return {"source": settings.who_don_api_url, "retrieved_at": utc_now().isoformat(), "value": items}
+    return {
+        "source": settings.who_don_api_url,
+        "retrieved_at": utc_now().isoformat(),
+        "value": items,
+    }

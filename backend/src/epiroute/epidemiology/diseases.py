@@ -418,6 +418,12 @@ def extract_label(title: str) -> str | None:
                 text = head
                 break
     text = _IN_COUNTRY.sub("", text).strip(" -–—,;:")
+    if "," in text:
+        head = text.split(",", 1)[0].strip()
+        # Only drop the tail when it was a place or qualifier rather than part
+        # of the name itself, so "Hand, foot and mouth disease" stays whole.
+        if len(head) >= 3 and classify(head) == classify(text):
+            text = head
     return text or None
 
 

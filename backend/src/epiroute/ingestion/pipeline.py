@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -59,9 +59,7 @@ def _known_countries(session: Session) -> set[str]:
 _MAX_LOCATION_ONLY = 12
 
 
-def _location_only_rows(
-    record: DonRecord, usable: list[object], known: set[str]
-) -> list[str]:
+def _location_only_rows(record: DonRecord, usable: Sequence[object], known: set[str]) -> list[str]:
     """Countries named in the title that no grounded observation already covers.
 
     These rows carry no numbers. They exist so a report still places the

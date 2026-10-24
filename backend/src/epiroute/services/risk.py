@@ -10,6 +10,7 @@ from epiroute import __version__
 from epiroute.core.clock import utc_now
 from epiroute.core.errors import NotFoundError
 from epiroute.datasets.iso import country_name
+from epiroute.epidemiology import diseases as disease_catalog
 from epiroute.epidemiology import establishment as est
 from epiroute.epidemiology import importation as imp
 from epiroute.epidemiology import prevalence as prev
@@ -21,6 +22,7 @@ from epiroute.epidemiology.profiles import (
     DEFAULT_PROFILE_KEY,
     PathogenProfile,
     get_profile,
+    match_profile_key,
 )
 from epiroute.repositories import outbreaks as outbreak_repo
 from epiroute.repositories import reference as reference_repo
@@ -71,40 +73,162 @@ class _OriginInput:
     report_published_at: object
 
 
-def _resolve_profile(
-    session: Session, requested_key: str | None
-) -> tuple[PathogenProfile | None, str | None, list[ResponseWarning]]:
-    warnings: list[ResponseWarning] = []
-    if requested_key:
-        return get_profile(requested_key), requested_key, warnings
+@dataclass(frozen=True, slots=True)
+class _Focus:
+    """The disease a risk response is about, and where that choice came from."""
 
-    recent = outbreak_repo.list_reports(session, limit=1)
-    if recent and recent[0].pathogen_key:
-        key = recent[0].pathogen_key
+    disease_key: str | None
+    disease_name: str | None
+    disease_label: str | None
+    disease_family: str | None
+    pathogen_key: str | None
+    source: str
+
+
+def _resolve_focus(
+    session: Session, destination_iso3: str, query: RiskQuery
+) -> tuple[_Focus, list[ResponseWarning]]:
+    """Decide which disease this destination's risk is about.
+
+    The destination's own record is consulted before anything global. Falling
+    back to the most recently published disease anywhere would answer about a
+    disease the selected country has never reported, which is what made two
+    infected countries look identical.
+    """
+    warnings: list[ResponseWarning] = []
+
+    if query.disease_key:
+        focus = outbreak_repo.focus_for_disease(session, query.disease_key)
+        if focus is None:
+            raise NotFoundError("disease", query.disease_key)
+        return (
+            _Focus(
+                disease_key=focus.disease_key,
+                disease_name=focus.disease_name,
+                disease_label=focus.disease_label,
+                disease_family=_family_for(focus.disease_key),
+                pathogen_key=query.pathogen_key or focus.pathogen_key,
+                source="requested",
+            ),
+            warnings,
+        )
+
+    if query.pathogen_key or query.disease_label:
+        return (
+            _Focus(
+                disease_key=None,
+                disease_name=query.disease_label,
+                disease_label=query.disease_label,
+                disease_family=None,
+                pathogen_key=query.pathogen_key,
+                source="requested",
+            ),
+            warnings,
+        )
+
+    local = outbreak_repo.latest_focus_for_country(session, destination_iso3)
+    if local is not None and local.disease_key:
+        return (
+            _Focus(
+                disease_key=local.disease_key,
+                disease_name=local.disease_name,
+                disease_label=local.disease_label,
+                disease_family=_family_for(local.disease_key),
+                pathogen_key=local.pathogen_key,
+                source="destination_record",
+            ),
+            warnings,
+        )
+
+    global_focus = outbreak_repo.latest_global_focus(session)
+    if global_focus is not None and global_focus.disease_key:
         warnings.append(
             ResponseWarning(
-                code="pathogen_inferred",
+                code="disease_inferred_globally",
                 message=(
-                    f"No pathogen was requested, so parameters were taken from the most "
-                    f"recent report's profile ({key})."
+                    f"No outbreak report in EpiRoute names this country, so the most "
+                    f"recently reported disease anywhere ({global_focus.disease_name}) "
+                    f"was used. Select a disease to ask about a different one."
                 ),
                 severity="info",
             )
         )
-        return get_profile(key), key, warnings
+        return (
+            _Focus(
+                disease_key=global_focus.disease_key,
+                disease_name=global_focus.disease_name,
+                disease_label=global_focus.disease_label,
+                disease_family=_family_for(global_focus.disease_key),
+                pathogen_key=global_focus.pathogen_key,
+                source="global_latest",
+            ),
+            warnings,
+        )
 
     warnings.append(
         ResponseWarning(
             code="pathogen_defaulted",
             message=(
-                f"No pathogen was requested and none could be inferred, so the "
-                f"'{DEFAULT_PROFILE_KEY}' profile was used. Its parameters are "
-                f"assumptions, not measurements for any specific outbreak."
+                f"No disease could be identified, so the '{DEFAULT_PROFILE_KEY}' profile "
+                f"was used. Its parameters are assumptions, not measurements for any "
+                f"specific outbreak."
             ),
             severity="important",
         )
     )
-    return get_profile(DEFAULT_PROFILE_KEY), None, warnings
+    return (
+        _Focus(None, None, None, None, None, "defaulted"),
+        warnings,
+    )
+
+
+def _family_for(disease_key: str | None) -> str | None:
+    if not disease_key:
+        return None
+    definition = disease_catalog.BY_KEY.get(disease_key)
+    return definition.family if definition else None
+
+
+def _profile_for(focus: _Focus) -> tuple[PathogenProfile, str | None, list[ResponseWarning]]:
+    """The parameter profile to run with, and a warning when it had to be guessed."""
+    warnings: list[ResponseWarning] = []
+    if focus.pathogen_key:
+        profile = get_profile(focus.pathogen_key)
+        if profile is not None:
+            return profile, focus.pathogen_key, warnings
+
+    inferred = match_profile_key(focus.disease_name) or match_profile_key(focus.disease_label)
+    if inferred:
+        profile = get_profile(inferred)
+        if profile is not None:
+            warnings.append(
+                ResponseWarning(
+                    code="pathogen_inferred",
+                    message=(
+                        f"{focus.disease_name or 'This disease'} has no mapped parameter "
+                        f"profile, so the '{inferred}' profile was matched from its name."
+                    ),
+                    severity="info",
+                )
+            )
+            return profile, inferred, warnings
+
+    if focus.disease_name:
+        warnings.append(
+            ResponseWarning(
+                code="pathogen_defaulted",
+                message=(
+                    f"No parameter profile exists for {focus.disease_name}, so the "
+                    f"'{DEFAULT_PROFILE_KEY}' profile was used. Importation and "
+                    f"establishment numbers are therefore generic, not specific to "
+                    f"this disease."
+                ),
+                severity="important",
+            )
+        )
+    default = get_profile(DEFAULT_PROFILE_KEY)
+    assert default is not None
+    return default, None, warnings
 
 
 def _build_presence(
@@ -113,9 +237,14 @@ def _build_presence(
     pathogen_key: str | None,
     *,
     disease_label: str | None = None,
+    disease_key: str | None = None,
 ) -> LocalPresence:
     rows = outbreak_repo.verified_observations_for_country(
-        session, destination_iso3, pathogen_key=pathogen_key, disease_label=disease_label
+        session,
+        destination_iso3,
+        pathogen_key=pathogen_key,
+        disease_label=disease_label,
+        disease_key=disease_key,
     )
     if not rows:
         return LocalPresence(
@@ -184,12 +313,17 @@ def _origin_prevalence(
     profile: PathogenProfile,
     query: RiskQuery,
     population: int,
+    focus: _Focus,
 ) -> prev.PrevalenceOutcome:
-    if not profile.key:
+    if not profile.key and not focus.disease_key:
         return prev.PrevalenceUnavailable("no_pathogen", "no pathogen profile selected")
 
     series = outbreak_repo.cumulative_series(
-        session, origin_iso3, profile.key, disease_label=query.disease_label
+        session,
+        origin_iso3,
+        profile.key or "",
+        disease_label=focus.disease_label,
+        disease_key=focus.disease_key,
     )
     points = [
         prev.ReportedCount(
@@ -212,10 +346,7 @@ def _origin_prevalence(
         underreporting=band,
         as_of=utc_now(),
     )
-    if (
-        isinstance(outcome, prev.PrevalenceUnavailable)
-        and outcome.reason == "report_too_old"
-    ):
+    if isinstance(outcome, prev.PrevalenceUnavailable) and outcome.reason == "report_too_old":
         relaxed = prev.prevalence_from_series(
             points,
             population=population,
@@ -243,18 +374,24 @@ def _collect_origins(
     destination_iso3: str,
     profile: PathogenProfile,
     query: RiskQuery,
+    focus: _Focus,
 ) -> tuple[list[_OriginInput], list[dict[str, str]], int, bool]:
     window = utc_now() - timedelta(days=PRESENCE_LOOKBACK_DAYS)
+    pathogen_key = None if focus.disease_key else profile.key
     candidates = outbreak_repo.countries_with_active_outbreaks(
         session,
-        pathogen_key=profile.key,
-        disease_label=query.disease_label,
+        pathogen_key=pathogen_key,
+        disease_label=focus.disease_label,
+        disease_key=focus.disease_key,
         since=window,
     )
     used_older_reports = False
     if not candidates:
         candidates = outbreak_repo.countries_with_active_outbreaks(
-            session, pathogen_key=profile.key, disease_label=query.disease_label
+            session,
+            pathogen_key=pathogen_key,
+            disease_label=focus.disease_label,
+            disease_key=focus.disease_key,
         )
         used_older_reports = bool(candidates)
     candidates = [c for c in candidates if c != destination_iso3.upper()]
@@ -274,12 +411,18 @@ def _collect_origins(
                 {"origin_iso3": origin, "reason": "no passenger flow to this destination"}
             )
             continue
-        outcome = _origin_prevalence(session, origin, profile, query, country.population)
+        outcome = _origin_prevalence(session, origin, profile, query, country.population, focus)
         if isinstance(outcome, prev.PrevalenceUnavailable):
             excluded.append({"origin_iso3": origin, "reason": outcome.detail})
             continue
 
-        series = outbreak_repo.cumulative_series(session, origin, profile.key or "")
+        series = outbreak_repo.cumulative_series(
+            session,
+            origin,
+            profile.key or "",
+            disease_label=focus.disease_label,
+            disease_key=focus.disease_key,
+        )
         latest = series[-1] if series else None
         usable.append(
             _OriginInput(
@@ -347,11 +490,9 @@ def compute_risk(session: Session, destination_iso3: str, query: RiskQuery) -> R
     if destination is None:
         raise NotFoundError("country", destination_iso3)
 
-    requested_key = query.pathogen_key
-    if requested_key is None and query.disease_label:
-        requested_key = outbreak_repo.pathogen_key_for_disease(session, query.disease_label)
-    profile, matched_key, warnings = _resolve_profile(session, requested_key)
-    assert profile is not None
+    focus, warnings = _resolve_focus(session, destination.iso3, query)
+    profile, matched_key, profile_warnings = _profile_for(focus)
+    warnings.extend(profile_warnings)
 
     alpha = query.alpha if query.alpha is not None else profile.alpha.central
     alpha_low = query.alpha if query.alpha is not None else profile.alpha.low
@@ -378,10 +519,14 @@ def compute_risk(session: Session, destination_iso3: str, query: RiskQuery) -> R
     k_high = query.dispersion_k if query.dispersion_k is not None else profile.dispersion_k.high
 
     presence = _build_presence(
-        session, destination.iso3, profile.key, disease_label=query.disease_label
+        session,
+        destination.iso3,
+        focus.pathogen_key or profile.key,
+        disease_label=focus.disease_label,
+        disease_key=focus.disease_key,
     )
     origins, excluded, considered, used_older_reports = _collect_origins(
-        session, destination.iso3, profile, query
+        session, destination.iso3, profile, query, focus
     )
     if used_older_reports:
         warnings.append(
@@ -443,6 +588,7 @@ def compute_risk(session: Session, destination_iso3: str, query: RiskQuery) -> R
             destination,
             profile,
             matched_key,
+            focus,
             query,
             presence,
             importation,
@@ -556,6 +702,7 @@ def compute_risk(session: Session, destination_iso3: str, query: RiskQuery) -> R
         destination,
         profile,
         matched_key,
+        focus,
         query,
         presence,
         importation,
@@ -761,20 +908,11 @@ def _scenario_markers(
     return markers
 
 
-def _disease_name(
-    session: Session, query: RiskQuery, pathogen_key: str | None, destination_iso3: str
-) -> str | None:
-    if query.disease_label:
-        return query.disease_label
-    return outbreak_repo.latest_disease_label(
-        session, pathogen_key, country_iso3=destination_iso3
-    ) or outbreak_repo.latest_disease_label(session, pathogen_key)
-
-
 def _assemble(
     destination: object,
     profile: PathogenProfile,
     matched_key: str | None,
+    focus: _Focus,
     query: RiskQuery,
     presence: LocalPresence,
     importation: ImportationRisk,
@@ -890,7 +1028,11 @@ def _assemble(
         pathogen=PathogenSummary(
             key=matched_key or profile.key,
             label=profile.label,
-            disease_label=_disease_name(session, query, matched_key or profile.key, iso3),
+            disease_key=focus.disease_key,
+            disease_name=focus.disease_name,
+            disease_label=focus.disease_label or focus.disease_name,
+            disease_family=focus.disease_family,
+            disease_source=focus.source,
             confidence=profile.confidence.value,
             establishment_estimable=profile.establishment_estimable,
             establishment_note=profile.establishment_note,

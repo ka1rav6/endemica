@@ -196,3 +196,113 @@ class GravityModelOut(BaseModel):
     uncertainty_factor: float
     notes: dict[str, object] | None = None
     caveat: str
+
+
+class DiseaseHistoryOut(BaseModel):
+    """One canonical disease across the whole archive."""
+
+    model_config = ConfigDict(frozen=True)
+
+    disease_key: str
+    disease_name: str
+    disease_family: str | None = None
+    pathogen_key: str | None = None
+    report_count: int
+    country_count: int
+    grounded_country_count: int
+    first_published_at: datetime | None = None
+    last_published_at: datetime | None = None
+    cases_confirmed: int | None = None
+    deaths: int | None = None
+    source_labels: list[str] = Field(default_factory=list)
+
+
+class CountrySpreadOut(BaseModel):
+    """One country's involvement in one disease."""
+
+    model_config = ConfigDict(frozen=True)
+
+    country_iso3: str
+    country_name: str
+    centroid_lat: float | None = None
+    centroid_lon: float | None = None
+    report_count: int
+    first_published_at: datetime | None = None
+    last_published_at: datetime | None = None
+    cases_confirmed: int | None = None
+    deaths: int | None = None
+    grounded: bool
+    report_url: HttpUrl | None = None
+    report_title: str | None = None
+    arrival_order: int
+
+
+class DiseaseTimelineOut(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    year: int
+    report_count: int
+    country_count: int
+    new_country_count: int
+    cumulative_country_count: int
+    new_countries: list[str] = Field(default_factory=list)
+    cases_confirmed: int | None = None
+    deaths: int | None = None
+
+
+class DiseaseSpreadResponse(BaseModel):
+    """A disease's full recorded history: who it reached, when, and how widely."""
+
+    model_config = ConfigDict(frozen=True)
+
+    disease_key: str
+    disease_name: str
+    disease_family: str | None = None
+    pathogen_key: str | None = None
+    report_count: int
+    country_count: int
+    first_published_at: datetime | None = None
+    last_published_at: datetime | None = None
+    cases_confirmed: int | None = None
+    deaths: int | None = None
+    is_active: bool
+    countries: list[CountrySpreadOut] = Field(default_factory=list)
+    timeline: list[DiseaseTimelineOut] = Field(default_factory=list)
+    note: str
+
+
+class CountryDiseaseOut(BaseModel):
+    """One disease ever reported for one country."""
+
+    model_config = ConfigDict(frozen=True)
+
+    disease_key: str
+    disease_name: str
+    disease_family: str | None = None
+    pathogen_key: str | None = None
+    report_count: int
+    first_published_at: datetime | None = None
+    last_published_at: datetime | None = None
+    cases_confirmed: int | None = None
+    deaths: int | None = None
+    grounded: bool
+    is_active: bool
+    report_url: HttpUrl | None = None
+
+
+class CountryProfileResponse(BaseModel):
+    """Everything EpiRoute holds about one country's outbreak record."""
+
+    model_config = ConfigDict(frozen=True)
+
+    iso3: str
+    name: str
+    region: str | None = None
+    subregion: str | None = None
+    population: int | None = None
+    centroid_lat: float | None = None
+    centroid_lon: float | None = None
+    inbound_flow_count: int = 0
+    report_count: int
+    active_disease_count: int
+    diseases: list[CountryDiseaseOut] = Field(default_factory=list)

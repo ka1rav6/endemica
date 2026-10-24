@@ -99,7 +99,11 @@ class PathogenSummary(BaseModel):
 
     key: str | None
     label: str
+    disease_key: str | None = None
+    disease_name: str | None = None
     disease_label: str | None = None
+    disease_family: str | None = None
+    disease_source: str | None = None
     confidence: str | None = None
     establishment_estimable: bool = True
     establishment_note: str | None = None
@@ -132,6 +136,7 @@ class RiskQuery(BaseModel):
 
     pathogen_key: str | None = None
     disease_label: str | None = None
+    disease_key: str | None = None
     horizon_days: Annotated[float, Field(ge=1, le=365)] = 14.0
     underreporting_low: Annotated[float, Field(ge=1, le=100)] = 2.0
     underreporting_central: Annotated[float, Field(ge=1, le=100)] = 4.0

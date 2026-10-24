@@ -17,6 +17,11 @@ Returns the three risk quantities for a destination, kept strictly separate:
 
 * `presence` — whether a source report attributes grounded cases to this country.
   Flight connectivity is never an input.
+
+With no `disease_key`, `pathogen` or `disease`, the disease is taken from the
+destination's own most recent report, so two infected countries are each
+answered about the disease they actually have. `pathogen.disease_source` states
+which rule was applied.
 * `importation` — probability that at least one infected traveller arrives within
   the horizon.
 * `establishment` — probability that an introduction leads to sustained local
@@ -45,6 +50,15 @@ def get_risk(
     disease: Annotated[
         str | None, Query(description="Disease name as written on the source report.")
     ] = None,
+    disease_key: Annotated[
+        str | None,
+        Query(
+            description=(
+                "Canonical disease key from /diseases/history. This is the precise "
+                "filter; it groups the source's wording variants onto one disease."
+            )
+        ),
+    ] = None,
     horizon_days: Annotated[float, Query(ge=1, le=365)] = 14.0,
     underreporting_low: Annotated[float, Query(ge=1, le=100)] = 2.0,
     underreporting_central: Annotated[float, Query(ge=1, le=100)] = 4.0,
@@ -60,6 +74,7 @@ def get_risk(
     query = RiskQuery(
         pathogen_key=pathogen,
         disease_label=disease,
+        disease_key=disease_key,
         horizon_days=horizon_days,
         underreporting_low=underreporting_low,
         underreporting_central=underreporting_central,

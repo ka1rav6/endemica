@@ -20,6 +20,7 @@ from epiroute.api import health as health_router
 from epiroute.api import static_data as static_data_router
 from epiroute.api.v1 import admin as admin_router
 from epiroute.api.v1 import countries as countries_router
+from epiroute.api.v1 import history as history_router
 from epiroute.api.v1 import meta as meta_router
 from epiroute.api.v1 import outbreaks as outbreaks_router
 from epiroute.api.v1 import risk as risk_router
@@ -187,6 +188,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(routes_router.router, prefix=api_prefix)
     app.include_router(risk_router.router, prefix=api_prefix)
     app.include_router(meta_router.router, prefix=api_prefix)
+    app.include_router(history_router.router, prefix=api_prefix)
     app.include_router(admin_router.router, prefix=api_prefix)
     return app
 

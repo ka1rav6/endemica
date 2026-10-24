@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
+from typing import Any
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import Select, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.sql.elements import ColumnElement
 
@@ -124,19 +125,30 @@ def verified_observations_for_country(
     *,
     pathogen_key: str | None = None,
     disease_label: str | None = None,
+    disease_key: str | None = None,
 ) -> list[tuple[OutbreakObservation, OutbreakReport]]:
+    """Grounded rows for one country.
+
+    ``disease_key`` is the precise filter and wins outright: it groups the
+    source's wording variants onto one disease. ``pathogen_key`` is only a
+    parameter profile and several diseases share one, so it is used alone
+    when no disease was identified.
+    """
     statement = (
         select(OutbreakObservation, OutbreakReport)
         .join(OutbreakReport, OutbreakObservation.report_id == OutbreakReport.id)
         .where(OutbreakObservation.country_iso3 == country_iso3.upper(), *_feeds_model())
         .order_by(OutbreakReport.published_at.desc().nullslast())
     )
-    if pathogen_key:
-        statement = statement.where(OutbreakReport.pathogen_key == pathogen_key)
-    if disease_label:
-        statement = statement.where(
-            func.lower(OutbreakReport.disease_label) == disease_label.casefold()
-        )
+    if disease_key:
+        statement = statement.where(OutbreakReport.disease_key == disease_key)
+    else:
+        if pathogen_key:
+            statement = statement.where(OutbreakReport.pathogen_key == pathogen_key)
+        if disease_label:
+            statement = statement.where(
+                func.lower(OutbreakReport.disease_label) == disease_label.casefold()
+            )
     return [(obs, rep) for obs, rep in session.execute(statement)]
 
 
@@ -146,9 +158,14 @@ def cumulative_series(
     pathogen_key: str,
     *,
     disease_label: str | None = None,
+    disease_key: str | None = None,
 ) -> list[CumulativePoint]:
     rows = verified_observations_for_country(
-        session, country_iso3, pathogen_key=pathogen_key, disease_label=disease_label
+        session,
+        country_iso3,
+        pathogen_key=pathogen_key,
+        disease_label=disease_label,
+        disease_key=disease_key,
     )
     by_report: dict[str, CumulativePoint] = {}
     for observation, report in rows:
@@ -206,6 +223,7 @@ def countries_with_active_outbreaks(
     *,
     pathogen_key: str | None = None,
     disease_label: str | None = None,
+    disease_key: str | None = None,
     since: datetime | None = None,
 ) -> list[str]:
     statement = (
@@ -214,12 +232,15 @@ def countries_with_active_outbreaks(
         .where(*_feeds_model())
         .distinct()
     )
-    if pathogen_key:
-        statement = statement.where(OutbreakReport.pathogen_key == pathogen_key)
-    if disease_label:
-        statement = statement.where(
-            func.lower(OutbreakReport.disease_label) == disease_label.casefold()
-        )
+    if disease_key:
+        statement = statement.where(OutbreakReport.disease_key == disease_key)
+    else:
+        if pathogen_key:
+            statement = statement.where(OutbreakReport.pathogen_key == pathogen_key)
+        if disease_label:
+            statement = statement.where(
+                func.lower(OutbreakReport.disease_label) == disease_label.casefold()
+            )
     if since:
         statement = statement.where(OutbreakReport.published_at >= since)
     return list(session.scalars(statement))
@@ -333,55 +354,79 @@ def observation_counts(session: Session) -> dict[str, int]:
     return {str(status.value): count for status, count in rows}
 
 
+# ---------------------------------------------------------------------------
+# Canonical-disease history
+#
+# Every query below groups on ``disease_key`` so that wording variants in the
+# source titles ("Yellow fever", "Yellow Fever", "Yellow fever in Ghana")
+# collapse into one disease. ``_feeds_model()`` still gates anything numeric;
+# rows without a grounded count contribute location and dates only.
+# ---------------------------------------------------------------------------
+
+
 @dataclass(frozen=True, slots=True)
 class DiseaseFocus:
+    disease_key: str | None
+    disease_name: str | None
     disease_label: str | None
     pathogen_key: str | None
     published_at: datetime | None
 
 
-def latest_focus_for_country(session: Session, country_iso3: str) -> DiseaseFocus | None:
-    """The most recent grounded disease reported for one country."""
-    row = session.execute(
+_FocusRow = tuple[str | None, str | None, str | None, str | None, datetime | None]
+
+
+def _focus_statement() -> Select[_FocusRow]:
+    return (
         select(
+            OutbreakReport.disease_key,
+            OutbreakReport.disease_name,
             OutbreakReport.disease_label,
             OutbreakReport.pathogen_key,
             OutbreakReport.published_at,
         )
-        .join(OutbreakObservation, OutbreakObservation.report_id == OutbreakReport.id)
-        .where(
-            OutbreakObservation.country_iso3 == country_iso3.upper(),
-            OutbreakReport.disease_label.is_not(None),
-            *_feeds_model(),
-        )
+        .where(OutbreakReport.disease_key.is_not(None))
         .order_by(OutbreakReport.published_at.desc().nullslast())
         .limit(1)
-    ).first()
+    )
+
+
+def latest_focus_for_country(session: Session, country_iso3: str) -> DiseaseFocus | None:
+    """The most recent disease reported for one country.
+
+    Used so that selecting a country shows the disease that country actually
+    has, instead of whatever was published most recently anywhere.
+    """
+    statement = _focus_statement().where(
+        OutbreakReport.id.in_(
+            select(OutbreakObservation.report_id).where(
+                OutbreakObservation.country_iso3 == country_iso3.upper()
+            )
+        )
+    )
+    row = session.execute(statement).first()
     if row is None:
         return None
-    return DiseaseFocus(disease_label=row[0], pathogen_key=row[1], published_at=row[2])
+    return DiseaseFocus(*row)
 
 
 def latest_global_focus(session: Session) -> DiseaseFocus | None:
+    row = session.execute(_focus_statement()).first()
+    return DiseaseFocus(*row) if row is not None else None
+
+
+def focus_for_disease(session: Session, disease_key: str) -> DiseaseFocus | None:
     row = session.execute(
-        select(
-            OutbreakReport.disease_label,
-            OutbreakReport.pathogen_key,
-            OutbreakReport.published_at,
-        )
-        .join(OutbreakObservation, OutbreakObservation.report_id == OutbreakReport.id)
-        .where(OutbreakReport.disease_label.is_not(None), *_feeds_model())
-        .order_by(OutbreakReport.published_at.desc().nullslast())
-        .limit(1)
+        _focus_statement().where(OutbreakReport.disease_key == disease_key)
     ).first()
-    if row is None:
-        return None
-    return DiseaseFocus(disease_label=row[0], pathogen_key=row[1], published_at=row[2])
+    return DiseaseFocus(*row) if row is not None else None
 
 
 @dataclass(frozen=True, slots=True)
 class DiseaseHistoryRecord:
-    disease_label: str
+    disease_key: str
+    disease_name: str
+    disease_family: str | None
     pathogen_key: str | None
     report_count: int
     country_count: int
@@ -390,72 +435,102 @@ class DiseaseHistoryRecord:
     cases_confirmed: int | None
     deaths: int | None
     grounded_country_count: int
+    source_labels: tuple[str, ...]
 
 
 def list_disease_history(session: Session) -> list[DiseaseHistoryRecord]:
-    """Every disease in the archive, with its full span and footprint."""
-    totals = session.execute(
+    """Every disease in the archive with its full span and footprint."""
+    spans = session.execute(
         select(
-            OutbreakReport.disease_label,
-            func.count(func.distinct(OutbreakReport.id)),
+            OutbreakReport.disease_key,
+            func.max(OutbreakReport.disease_name),
+            func.max(OutbreakReport.disease_family),
+            func.count(OutbreakReport.id),
             func.min(OutbreakReport.published_at),
             func.max(OutbreakReport.published_at),
-            func.count(func.distinct(OutbreakObservation.country_iso3)),
         )
-        .outerjoin(OutbreakObservation, OutbreakObservation.report_id == OutbreakReport.id)
-        .where(OutbreakReport.disease_label.is_not(None))
-        .group_by(OutbreakReport.disease_label)
+        .where(OutbreakReport.disease_key.is_not(None))
+        .group_by(OutbreakReport.disease_key)
     ).all()
 
-    keys = dict(
-        session.execute(
-            select(OutbreakReport.disease_label, func.max(OutbreakReport.pathogen_key))
-            .where(
-                OutbreakReport.disease_label.is_not(None),
-                OutbreakReport.pathogen_key.is_not(None),
-            )
-            .group_by(OutbreakReport.disease_label)
-        ).all()
-    )
+    countries: dict[str | None, int] = {}
+    for key, count in session.execute(
+        select(
+            OutbreakReport.disease_key,
+            func.count(func.distinct(OutbreakObservation.country_iso3)),
+        )
+        .join(OutbreakObservation, OutbreakObservation.report_id == OutbreakReport.id)
+        .where(OutbreakReport.disease_key.is_not(None))
+        .group_by(OutbreakReport.disease_key)
+    ).all():
+        countries[key] = count
 
+    pathogens: dict[str | None, str | None] = {}
+    for key, pathogen in session.execute(
+        select(OutbreakReport.disease_key, func.max(OutbreakReport.pathogen_key))
+        .where(
+            OutbreakReport.disease_key.is_not(None),
+            OutbreakReport.pathogen_key.is_not(None),
+        )
+        .group_by(OutbreakReport.disease_key)
+    ).all():
+        pathogens[key] = pathogen
+
+    # Case counts are cumulative per report, so the per-country peak is the
+    # right summary; summing reports would multiply-count the same outbreak.
     peaks = session.execute(
         select(
-            OutbreakReport.disease_label,
+            OutbreakReport.disease_key,
             OutbreakObservation.country_iso3,
             func.max(OutbreakObservation.cases_confirmed),
             func.max(OutbreakObservation.deaths),
         )
         .join(OutbreakObservation, OutbreakObservation.report_id == OutbreakReport.id)
-        .where(OutbreakReport.disease_label.is_not(None), *_feeds_model())
-        .group_by(OutbreakReport.disease_label, OutbreakObservation.country_iso3)
+        .where(OutbreakReport.disease_key.is_not(None), *_feeds_model())
+        .group_by(OutbreakReport.disease_key, OutbreakObservation.country_iso3)
     ).all()
 
     cases: dict[str, int] = {}
     deaths: dict[str, int] = {}
     grounded: dict[str, set[str]] = {}
-    for label, iso3, peak_cases, peak_deaths in peaks:
-        grounded.setdefault(label, set()).add(iso3)
+    for key, iso3, peak_cases, peak_deaths in peaks:
+        grounded.setdefault(key, set()).add(iso3)
         if peak_cases is not None:
-            cases[label] = cases.get(label, 0) + int(peak_cases)
+            cases[key] = cases.get(key, 0) + int(peak_cases)
         if peak_deaths is not None:
-            deaths[label] = deaths.get(label, 0) + int(peak_deaths)
+            deaths[key] = deaths.get(key, 0) + int(peak_deaths)
+
+    labels: dict[str, list[str]] = {}
+    for key, label in session.execute(
+        select(OutbreakReport.disease_key, OutbreakReport.disease_label)
+        .where(
+            OutbreakReport.disease_key.is_not(None),
+            OutbreakReport.disease_label.is_not(None),
+        )
+        .distinct()
+    ).all():
+        if label:
+            labels.setdefault(key, []).append(label)
 
     records = [
         DiseaseHistoryRecord(
-            disease_label=label,
-            pathogen_key=keys.get(label),
+            disease_key=key,
+            disease_name=name or key,
+            disease_family=family,
+            pathogen_key=pathogens.get(key),
             report_count=reports,
-            country_count=countries,
+            country_count=countries.get(key, 0),
             first_published_at=first,
             last_published_at=last,
-            cases_confirmed=cases.get(label),
-            deaths=deaths.get(label),
-            grounded_country_count=len(grounded.get(label, ())),
+            cases_confirmed=cases.get(key),
+            deaths=deaths.get(key),
+            grounded_country_count=len(grounded.get(key, ())),
+            source_labels=tuple(sorted(labels.get(key, []))[:8]),
         )
-        for label, reports, first, last, countries in totals
-        if label
+        for key, name, family, reports, first, last in spans
+        if key
     ]
-    records.sort(key=lambda r: (r.last_published_at or datetime.min), reverse=True)
+    records.sort(key=lambda r: r.report_count, reverse=True)
     return records
 
 
@@ -469,10 +544,11 @@ class CountrySpreadRecord:
     deaths: int | None
     grounded: bool
     report_url: str | None
+    report_title: str | None
 
 
-def country_spread_for_disease(session: Session, disease_label: str) -> list[CountrySpreadRecord]:
-    """Which countries a disease reached, when, and with what counts."""
+def country_spread_for_disease(session: Session, disease_key: str) -> list[CountrySpreadRecord]:
+    """Which countries a disease reached, when it arrived, and with what counts."""
     rows = session.execute(
         select(
             OutbreakObservation.country_iso3,
@@ -481,36 +557,42 @@ def country_spread_for_disease(session: Session, disease_label: str) -> list[Cou
             func.max(OutbreakReport.published_at),
         )
         .join(OutbreakReport, OutbreakObservation.report_id == OutbreakReport.id)
-        .where(func.lower(OutbreakReport.disease_label) == disease_label.casefold())
+        .where(OutbreakReport.disease_key == disease_key)
         .group_by(OutbreakObservation.country_iso3)
     ).all()
 
-    grounded_rows = session.execute(
-        select(
-            OutbreakObservation.country_iso3,
-            func.max(OutbreakObservation.cases_confirmed),
-            func.max(OutbreakObservation.deaths),
-        )
-        .join(OutbreakReport, OutbreakObservation.report_id == OutbreakReport.id)
-        .where(
-            func.lower(OutbreakReport.disease_label) == disease_label.casefold(),
-            *_feeds_model(),
-        )
-        .group_by(OutbreakObservation.country_iso3)
-    ).all()
-    grounded = {iso3: (c, d) for iso3, c, d in grounded_rows}
+    grounded = {
+        iso3: (cases, deaths)
+        for iso3, cases, deaths in session.execute(
+            select(
+                OutbreakObservation.country_iso3,
+                func.max(OutbreakObservation.cases_confirmed),
+                func.max(OutbreakObservation.deaths),
+            )
+            .join(OutbreakReport, OutbreakObservation.report_id == OutbreakReport.id)
+            .where(OutbreakReport.disease_key == disease_key, *_feeds_model())
+            .group_by(OutbreakObservation.country_iso3)
+        ).all()
+    }
 
-    url_rows = session.execute(
-        select(OutbreakObservation.country_iso3, func.max(OutbreakReport.source_url))
-        .join(OutbreakReport, OutbreakObservation.report_id == OutbreakReport.id)
-        .where(func.lower(OutbreakReport.disease_label) == disease_label.casefold())
-        .group_by(OutbreakObservation.country_iso3)
-    ).all()
-    urls = dict(url_rows)
+    latest = {
+        iso3: (url, title)
+        for iso3, url, title in session.execute(
+            select(
+                OutbreakObservation.country_iso3,
+                OutbreakReport.source_url,
+                OutbreakReport.title,
+            )
+            .join(OutbreakReport, OutbreakObservation.report_id == OutbreakReport.id)
+            .where(OutbreakReport.disease_key == disease_key)
+            .order_by(OutbreakReport.published_at.asc().nullsfirst())
+        ).all()
+    }
 
     records: list[CountrySpreadRecord] = []
     for iso3, reports, first, last in rows:
         counts = grounded.get(iso3)
+        url, title = latest.get(iso3, (None, None))
         records.append(
             CountrySpreadRecord(
                 country_iso3=iso3,
@@ -520,110 +602,205 @@ def country_spread_for_disease(session: Session, disease_label: str) -> list[Cou
                 cases_confirmed=int(counts[0]) if counts and counts[0] is not None else None,
                 deaths=int(counts[1]) if counts and counts[1] is not None else None,
                 grounded=iso3 in grounded,
-                report_url=urls.get(iso3),
+                report_url=url,
+                report_title=title,
             )
         )
-    records.sort(key=lambda r: (r.first_published_at or datetime.max))
+    records.sort(key=lambda r: r.first_published_at or datetime.max)
     return records
 
 
 @dataclass(frozen=True, slots=True)
 class DiseaseTimelinePoint:
-    period: str
+    year: int
     report_count: int
     country_count: int
+    new_country_count: int
+    cumulative_country_count: int
     new_countries: tuple[str, ...]
+    cases_confirmed: int | None
+    deaths: int | None
 
 
-def disease_timeline(session: Session, disease_label: str) -> list[DiseaseTimelinePoint]:
-    """Reports and newly reached countries per year, so spread reads chronologically."""
+def disease_timeline(session: Session, disease_key: str) -> list[DiseaseTimelinePoint]:
+    """Per-year reports, countries and newly reached countries for one disease."""
     rows = session.execute(
         select(
             OutbreakReport.published_at,
             OutbreakReport.id,
             OutbreakObservation.country_iso3,
+            OutbreakObservation.cases_confirmed,
+            OutbreakObservation.deaths,
+            OutbreakObservation.grounding_status,
         )
         .outerjoin(OutbreakObservation, OutbreakObservation.report_id == OutbreakReport.id)
         .where(
-            func.lower(OutbreakReport.disease_label) == disease_label.casefold(),
+            OutbreakReport.disease_key == disease_key,
             OutbreakReport.published_at.is_not(None),
         )
         .order_by(OutbreakReport.published_at)
     ).all()
 
-    by_year: dict[str, tuple[set[str], list[str]]] = {}
+    years: dict[int, dict[str, Any]] = {}
     seen: set[str] = set()
-    for published_at, report_id, iso3 in rows:
-        year = str(published_at.year)
-        reports, new = by_year.setdefault(year, (set(), []))
-        reports.add(str(report_id))
-        if iso3 and iso3 not in seen:
-            seen.add(iso3)
-            new.append(iso3)
-
-    return [
-        DiseaseTimelinePoint(
-            period=year,
-            report_count=len(reports),
-            country_count=len(new),
-            new_countries=tuple(new),
+    for published_at, report_id, iso3, cases, deaths, status in rows:
+        bucket = years.setdefault(
+            published_at.year,
+            {"reports": set(), "countries": set(), "new": [], "cases": {}, "deaths": {}},
         )
-        for year, (reports, new) in sorted(by_year.items())
-    ]
+        bucket["reports"].add(str(report_id))
+        if not iso3:
+            continue
+        bucket["countries"].add(iso3)
+        if iso3 not in seen:
+            seen.add(iso3)
+            bucket["new"].append(iso3)
+        if status in (ExtractionStatus.VERIFIED, ExtractionStatus.PARTIAL):
+            if cases is not None:
+                bucket["cases"][iso3] = max(bucket["cases"].get(iso3, 0), int(cases))
+            if deaths is not None:
+                bucket["deaths"][iso3] = max(bucket["deaths"].get(iso3, 0), int(deaths))
+
+    points: list[DiseaseTimelinePoint] = []
+    running = 0
+    for year in sorted(years):
+        bucket = years[year]
+        running += len(bucket["new"])
+        points.append(
+            DiseaseTimelinePoint(
+                year=year,
+                report_count=len(bucket["reports"]),
+                country_count=len(bucket["countries"]),
+                new_country_count=len(bucket["new"]),
+                cumulative_country_count=running,
+                new_countries=tuple(bucket["new"]),
+                cases_confirmed=sum(bucket["cases"].values()) or None,
+                deaths=sum(bucket["deaths"].values()) or None,
+            )
+        )
+    return points
 
 
-def diseases_for_country(session: Session, country_iso3: str) -> list[CountrySpreadRecord]:
-    """Every disease ever reported for one country, newest activity first."""
+@dataclass(frozen=True, slots=True)
+class CountryDiseaseRecord:
+    disease_key: str
+    disease_name: str
+    disease_family: str | None
+    pathogen_key: str | None
+    report_count: int
+    first_published_at: datetime | None
+    last_published_at: datetime | None
+    cases_confirmed: int | None
+    deaths: int | None
+    grounded: bool
+    report_url: str | None
+
+
+def diseases_for_country(session: Session, country_iso3: str) -> list[CountryDiseaseRecord]:
+    """Every disease ever reported for one country, most recent activity first."""
+    iso3 = country_iso3.upper()
     rows = session.execute(
         select(
-            OutbreakReport.disease_label,
+            OutbreakReport.disease_key,
+            func.max(OutbreakReport.disease_name),
+            func.max(OutbreakReport.disease_family),
+            func.max(OutbreakReport.pathogen_key),
             func.count(func.distinct(OutbreakReport.id)),
             func.min(OutbreakReport.published_at),
             func.max(OutbreakReport.published_at),
-            func.max(OutbreakObservation.cases_confirmed),
-            func.max(OutbreakObservation.deaths),
-            func.max(OutbreakReport.source_url),
         )
         .join(OutbreakObservation, OutbreakObservation.report_id == OutbreakReport.id)
         .where(
-            OutbreakObservation.country_iso3 == country_iso3.upper(),
-            OutbreakReport.disease_label.is_not(None),
+            OutbreakObservation.country_iso3 == iso3,
+            OutbreakReport.disease_key.is_not(None),
         )
-        .group_by(OutbreakReport.disease_label)
-        .order_by(func.max(OutbreakReport.published_at).desc().nullslast())
+        .group_by(OutbreakReport.disease_key)
     ).all()
-    return [
-        CountrySpreadRecord(
-            country_iso3=label,
+
+    grounded = {
+        key: (cases, deaths)
+        for key, cases, deaths in session.execute(
+            select(
+                OutbreakReport.disease_key,
+                func.max(OutbreakObservation.cases_confirmed),
+                func.max(OutbreakObservation.deaths),
+            )
+            .join(OutbreakObservation, OutbreakObservation.report_id == OutbreakReport.id)
+            .where(OutbreakObservation.country_iso3 == iso3, *_feeds_model())
+            .group_by(OutbreakReport.disease_key)
+        ).all()
+    }
+
+    urls: dict[str | None, str | None] = {}
+    for key, url in session.execute(
+        select(OutbreakReport.disease_key, func.max(OutbreakReport.source_url))
+        .join(OutbreakObservation, OutbreakObservation.report_id == OutbreakReport.id)
+        .where(OutbreakObservation.country_iso3 == iso3)
+        .group_by(OutbreakReport.disease_key)
+    ).all():
+        urls[key] = url
+
+    records = [
+        CountryDiseaseRecord(
+            disease_key=key,
+            disease_name=name or key,
+            disease_family=family,
+            pathogen_key=pathogen,
             report_count=reports,
             first_published_at=first,
             last_published_at=last,
-            cases_confirmed=int(cases) if cases is not None else None,
-            deaths=int(deaths) if deaths is not None else None,
-            grounded=cases is not None or deaths is not None,
-            report_url=url,
+            cases_confirmed=(
+                int(grounded[key][0]) if key in grounded and grounded[key][0] is not None else None
+            ),
+            deaths=(
+                int(grounded[key][1]) if key in grounded and grounded[key][1] is not None else None
+            ),
+            grounded=key in grounded,
+            report_url=urls.get(key),
         )
-        for label, reports, first, last, cases, deaths, url in rows
-        if label
+        for key, name, family, pathogen, reports, first, last in rows
+        if key
     ]
+    records.sort(key=lambda r: r.last_published_at or datetime.min, reverse=True)
+    return records
 
 
-def disease_country_matrix(session: Session) -> dict[str, list[tuple[str, datetime | None]]]:
-    """Diseases per country with their latest report date, for the map layer."""
+def country_disease_summary(session: Session) -> dict[str, list[tuple[str, str, datetime | None]]]:
+    """``iso3 -> [(disease_key, disease_name, last_report)]`` for the map layer."""
     rows = session.execute(
         select(
             OutbreakObservation.country_iso3,
-            OutbreakReport.disease_label,
+            OutbreakReport.disease_key,
+            func.max(OutbreakReport.disease_name),
             func.max(OutbreakReport.published_at),
         )
         .join(OutbreakReport, OutbreakObservation.report_id == OutbreakReport.id)
-        .where(OutbreakReport.disease_label.is_not(None))
-        .group_by(OutbreakObservation.country_iso3, OutbreakReport.disease_label)
+        .where(OutbreakReport.disease_key.is_not(None))
+        .group_by(OutbreakObservation.country_iso3, OutbreakReport.disease_key)
     ).all()
-    grouped: dict[str, list[tuple[str, datetime | None]]] = {}
-    for iso3, label, last in rows:
-        if label:
-            grouped.setdefault(iso3, []).append((label, last))
+    grouped: dict[str, list[tuple[str, str, datetime | None]]] = {}
+    for iso3, key, name, last in rows:
+        grouped.setdefault(iso3, []).append((key, name or key, last))
     for entries in grouped.values():
-        entries.sort(key=lambda e: (e[1] or datetime.min), reverse=True)
+        entries.sort(key=lambda e: e[2] or datetime.min, reverse=True)
     return grouped
+
+
+def countries_reporting_disease(
+    session: Session,
+    disease_key: str,
+    *,
+    since: datetime | None = None,
+    grounded_only: bool = False,
+) -> list[str]:
+    statement = (
+        select(OutbreakObservation.country_iso3)
+        .join(OutbreakReport, OutbreakObservation.report_id == OutbreakReport.id)
+        .where(OutbreakReport.disease_key == disease_key)
+        .distinct()
+    )
+    if grounded_only:
+        statement = statement.where(*_feeds_model())
+    if since:
+        statement = statement.where(OutbreakReport.published_at >= since)
+    return list(session.scalars(statement))
