@@ -145,3 +145,43 @@ def _tmp_dir() -> Path:
     import tempfile
 
     return Path(tempfile.mkdtemp())
+
+
+def test_a_total_that_did_not_move_is_not_a_fresh_report() -> None:
+    # WHO repeats every country's running total every day, moved or not.
+    # Storing an unmoved total as a new observation would say the country
+    # reported this month when it stopped reporting years ago.
+    path = write(
+        _tmp_dir(),
+        "2020-01-31,TH,Thailand,SEAR,,10,,1",
+        "2020-02-29,TH,Thailand,SEAR,,20,,2",
+        "2020-03-31,TH,Thailand,SEAR,,20,,2",
+        "2020-04-30,TH,Thailand,SEAR,,20,,2",
+    )
+    built, detail = covid_global.monthly_snapshots(path, known=KNOWN, by_iso2=BY_ISO2)
+    assert [snap.month for snap in built] == ["2020-01", "2020-02"]
+    assert detail["rows_unchanged_since_previous_month"] == 2
+
+
+def test_a_country_that_resumes_reporting_comes_back() -> None:
+    path = write(
+        _tmp_dir(),
+        "2020-01-31,TH,Thailand,SEAR,,10,,1",
+        "2020-02-29,TH,Thailand,SEAR,,10,,1",
+        "2020-03-31,TH,Thailand,SEAR,,30,,3",
+    )
+    built = snapshots(path)
+    assert [snap.month for snap in built] == ["2020-01", "2020-03"]
+    assert built[-1].counts[0].cases == 30
+
+
+def test_one_country_going_quiet_does_not_drop_another() -> None:
+    path = write(
+        _tmp_dir(),
+        "2020-01-31,TH,Thailand,SEAR,,10,,1",
+        "2020-01-31,JP,Japan,WPR,,5,,0",
+        "2020-02-29,TH,Thailand,SEAR,,10,,1",
+        "2020-02-29,JP,Japan,WPR,,9,,1",
+    )
+    built = snapshots(path)
+    assert [count.iso3 for count in built[-1].counts] == ["JPN"]

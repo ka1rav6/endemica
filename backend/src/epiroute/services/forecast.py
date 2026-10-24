@@ -44,9 +44,9 @@ from epiroute.repositories import reference as reference_repo
 from epiroute.schemas.risk import RiskQuery
 from epiroute.services.risk import (
     PRESENCE_LOOKBACK_DAYS,
-    _origin_prevalence,
     _profile_for,
     _resolve_focus,
+    prevalence_from_cumulative,
 )
 
 # The outbreaks the panel was built from. A live outbreak of one of these is
@@ -82,13 +82,30 @@ def rank_next_countries(
         since=window,
         until=moment,
     )
+    # One lookup for every country, and one query for every origin's series.
+    # Both used to run once per country, which COVID-19's 227 reporting
+    # countries turned into several hundred round trips for one request.
+    by_iso3 = {country.iso3: country for country in anchor}
+    series_by_origin = outbreak_repo.cumulative_series_by_country(
+        session,
+        reported,
+        profile.key or "",
+        disease_label=focus.disease_label,
+        disease_key=focus.disease_key,
+        as_of=moment,
+    )
     origin_prevalence: dict[str, float] = {}
     for origin in reported:
-        country = reference_repo.get_country(session, origin)
+        country = by_iso3.get(origin)
         if country is None or not country.population:
             continue
-        outcome = _origin_prevalence(
-            session, origin, profile, query, country.population, focus, as_of=moment
+        outcome = prevalence_from_cumulative(
+            series_by_origin.get(origin, []),
+            profile=profile,
+            query=query,
+            population=country.population,
+            focus=focus,
+            as_of=moment,
         )
         if isinstance(outcome, prev.PrevalenceEstimate):
             origin_prevalence[origin] = outcome.central
@@ -112,7 +129,7 @@ def rank_next_countries(
 
     scored: list[_Ranked] = []
     for iso3, rate in rates.items():
-        country = reference_repo.get_country(session, iso3)
+        country = by_iso3.get(iso3)
         row = FeatureRow(
             arrival_rate_per_day=rate,
             inbound_passengers_per_day=inbound[iso3],

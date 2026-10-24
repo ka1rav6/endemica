@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
+from functools import lru_cache
 from typing import Any
 
 from sqlalchemy import Select, func, or_, select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session, defer, selectinload
 from sqlalchemy.sql.elements import ColumnElement
 
 from epiroute.db.models import (
@@ -173,10 +175,44 @@ def verified_observations_for_country(
     return [(obs, rep) for obs, rep in session.execute(statement)]
 
 
+@lru_cache(maxsize=8192)
+def _scan_start(_content_sha256: str, narrative: str) -> date | None:
+    """``find_outbreak_start`` memoised on the hash of the text it scans.
+
+    Keyed on ``content_sha256`` rather than the report id so that re-ingesting
+    a bulletin whose text has changed produces a different key, and a report
+    that was merely touched does not.
+    """
+    return find_outbreak_start(narrative)
+
+
+def _outbreak_start(report: OutbreakReport, cache: dict[uuid.UUID, date | None]) -> date | None:
+    """The declared outbreak start in a report's narrative, scanned once per report.
+
+    ``find_outbreak_start`` runs a set of date patterns over the whole
+    narrative. It used to run once per observation row, so a bulletin naming
+    227 countries had its text scanned 227 times. That was 6.5 of the 10
+    seconds a full endpoint build took once COVID-19 arrived, and the same
+    scan again for every origin the forecast priced.
+
+    Two caches, because there are two shapes of caller. ``cache`` is seeded
+    per request by :func:`_outbreak_starts`, which reads the narratives in one
+    query so the row-per-country join never has to carry them. The process-level
+    memo behind it covers the callers that hold ORM reports and arrive one
+    country at a time.
+    """
+    if report.id not in cache:
+        cache[report.id] = _scan_start(report.content_sha256, report.narrative_text or "")
+    return cache[report.id]
+
+
 def _points_for_rows(
     rows: list[tuple[OutbreakObservation, OutbreakReport]],
+    starts: dict[uuid.UUID, date | None] | None = None,
 ) -> list[CumulativePoint]:
     """One cumulative point per report, for rows that already share a source and disease."""
+    if starts is None:
+        starts = {}
     by_report: dict[str, CumulativePoint] = {}
     for observation, report in rows:
         if report.published_at is None:
@@ -199,7 +235,7 @@ def _points_for_rows(
             cases_suspected=suspected,
             report_identifier=report.source_identifier,
             report_url=report.source_url,
-            outbreak_started_on=find_outbreak_start(report.narrative_text or ""),
+            outbreak_started_on=_outbreak_start(report, starts),
             source_name=report.source_name,
             disease_id=report.disease_key or (report.disease_label or ""),
         )
@@ -284,8 +320,90 @@ def cumulative_series(
     for observation, report in rows:
         disease_id = report.disease_key or (report.disease_label or "").casefold()
         groups.setdefault((report.source_name, disease_id), []).append((observation, report))
-    built = {key: _points_for_rows(group) for key, group in groups.items()}
+    starts: dict[uuid.UUID, date | None] = {}
+    built = {key: _points_for_rows(group, starts) for key, group in groups.items()}
     return choose_single_series(built)
+
+
+def cumulative_series_by_country(
+    session: Session,
+    countries: Iterable[str],
+    pathogen_key: str,
+    *,
+    disease_label: str | None = None,
+    disease_key: str | None = None,
+    as_of: datetime | None = None,
+) -> dict[str, list[CumulativePoint]]:
+    """:func:`cumulative_series` for many countries, in one query.
+
+    The forecast prices every country already reporting the disease. Calling
+    the single-country version in a loop was one round trip per origin, which
+    COVID-19 turned into 227 of them hydrating 85,000 ORM instances. The
+    grouping below is the same; only the fetch is shared.
+    """
+    wanted = {iso3.upper() for iso3 in countries}
+    if not wanted:
+        return {}
+    statement = (
+        select(OutbreakObservation, OutbreakReport)
+        .join(OutbreakReport, OutbreakObservation.report_id == OutbreakReport.id)
+        .where(OutbreakObservation.country_iso3.in_(wanted), *_feeds_model())
+        .order_by(OutbreakReport.published_at.desc().nullslast())
+        .options(
+            defer(OutbreakReport.narrative_text),
+            defer(OutbreakReport.summary_text),
+            defer(OutbreakReport.validation_warnings),
+            defer(OutbreakObservation.grounding_detail),
+            defer(OutbreakObservation.evidence_text),
+        )
+    )
+    if disease_key:
+        statement = statement.where(OutbreakReport.disease_key == disease_key)
+    else:
+        if pathogen_key:
+            statement = statement.where(OutbreakReport.pathogen_key == pathogen_key)
+        if disease_label:
+            statement = statement.where(
+                func.lower(OutbreakReport.disease_label) == disease_label.casefold()
+            )
+
+    grouped: dict[str, dict[tuple[str, str], list[tuple[OutbreakObservation, OutbreakReport]]]] = {}
+    for observation, report in session.execute(statement):
+        if not published_at_or_before(report.published_at, as_of):
+            continue
+        disease_id = report.disease_key or (report.disease_label or "").casefold()
+        grouped.setdefault(observation.country_iso3, {}).setdefault(
+            (report.source_name, disease_id), []
+        ).append((observation, report))
+
+    starts = _outbreak_starts_for_reports(session, grouped)
+    series: dict[str, list[CumulativePoint]] = {}
+    for iso3, by_source in grouped.items():
+        built = {key: _points_for_rows(rows, starts) for key, rows in by_source.items()}
+        series[iso3] = choose_single_series(built)
+    return series
+
+
+def _outbreak_starts_for_reports(
+    session: Session,
+    grouped: dict[str, dict[tuple[str, str], list[tuple[OutbreakObservation, OutbreakReport]]]],
+) -> dict[uuid.UUID, date | None]:
+    """Narratives for exactly the reports in ``grouped``, read once each."""
+    ids = {
+        report.id
+        for by_source in grouped.values()
+        for rows in by_source.values()
+        for _observation, report in rows
+    }
+    if not ids:
+        return {}
+    statement = select(
+        OutbreakReport.id, OutbreakReport.content_sha256, OutbreakReport.narrative_text
+    ).where(OutbreakReport.id.in_(ids))
+    return {
+        report_id: _scan_start(content_sha256, narrative or "")
+        for report_id, content_sha256, narrative in session.execute(statement)
+    }
 
 
 def _greater(a: int | None, b: int | None) -> int | None:
@@ -620,22 +738,61 @@ class SeriesEndpoint:
         return self.deaths <= cases
 
 
+def _endpoint_filters(disease_key: str | None, since: datetime | None) -> list[ColumnElement[bool]]:
+    filters: list[ColumnElement[bool]] = [
+        OutbreakReport.disease_key.is_not(None),
+        OutbreakReport.published_at.is_not(None),
+        *_feeds_model(),
+    ]
+    if disease_key is not None:
+        filters.append(OutbreakReport.disease_key == disease_key)
+    if since is not None:
+        filters.append(OutbreakReport.published_at >= since)
+    return filters
+
+
+def _outbreak_starts(
+    session: Session, *, disease_key: str | None, since: datetime | None
+) -> dict[uuid.UUID, date | None]:
+    """Scan each report's narrative for a declared outbreak start, once.
+
+    A separate query over distinct reports, so the row-per-country join below
+    does not have to carry the narrative at all. A COVID-19 monthly snapshot
+    names 227 countries in one narrative of about 15 kB; joined, that text
+    would be hydrated 227 times for one scan's worth of information.
+    """
+    # The join is required, not incidental: _endpoint_filters constrains the
+    # observation's grounding status, so without it this is a cartesian
+    # product of every report against every observation.
+    statement = (
+        select(OutbreakReport.id, OutbreakReport.narrative_text)
+        .join(OutbreakObservation, OutbreakObservation.report_id == OutbreakReport.id)
+        .where(*_endpoint_filters(disease_key, since))
+        .group_by(OutbreakReport.id, OutbreakReport.narrative_text)
+    )
+    return {
+        report_id: find_outbreak_start(narrative or "")
+        for report_id, narrative in session.execute(statement)
+    }
+
+
 def _endpoint_rows(
     session: Session, *, disease_key: str | None, since: datetime | None
 ) -> list[tuple[OutbreakObservation, OutbreakReport]]:
     statement = (
         select(OutbreakObservation, OutbreakReport)
         .join(OutbreakReport, OutbreakObservation.report_id == OutbreakReport.id)
-        .where(
-            OutbreakReport.disease_key.is_not(None),
-            OutbreakReport.published_at.is_not(None),
-            *_feeds_model(),
+        .where(*_endpoint_filters(disease_key, since))
+        # Nothing below this point reads the narrative or either JSONB column,
+        # and together they are most of the bytes on the wire.
+        .options(
+            defer(OutbreakReport.narrative_text),
+            defer(OutbreakReport.summary_text),
+            defer(OutbreakReport.validation_warnings),
+            defer(OutbreakObservation.grounding_detail),
+            defer(OutbreakObservation.evidence_text),
         )
     )
-    if disease_key is not None:
-        statement = statement.where(OutbreakReport.disease_key == disease_key)
-    if since is not None:
-        statement = statement.where(OutbreakReport.published_at >= since)
     return [(observation, report) for observation, report in session.execute(statement)]
 
 
@@ -659,8 +816,11 @@ def series_endpoints(
         grouped.setdefault(key, {}).setdefault(source_key, []).append((observation, report))
 
     endpoints: dict[tuple[str, str], SeriesEndpoint] = {}
+    # One cache across every series: a report's narrative is shared by all the
+    # countries it names, so it should be scanned once, not once per country.
+    starts = _outbreak_starts(session, disease_key=disease_key, since=since)
     for (disease, iso3), by_source in grouped.items():
-        built = {source: _points_for_rows(rows) for source, rows in by_source.items()}
+        built = {source: _points_for_rows(rows, starts) for source, rows in by_source.items()}
         series = choose_single_series(built)
         if not series:
             continue
@@ -761,8 +921,19 @@ class DiseaseHistoryRecord:
     source_labels: tuple[str, ...]
 
 
-def list_disease_history(session: Session) -> list[DiseaseHistoryRecord]:
-    """Every disease in the archive with its full span and footprint."""
+def list_disease_history(
+    session: Session,
+    *,
+    disease_key: str | None = None,
+    endpoints: dict[tuple[str, str], SeriesEndpoint] | None = None,
+) -> list[DiseaseHistoryRecord]:
+    """Every disease in the archive with its full span and footprint.
+
+    ``disease_key`` narrows the whole computation to one disease. The spread
+    endpoint wants exactly one record, and building all fifty-six meant a
+    second unfiltered pass over every grounded observation in the database.
+    """
+    only = [OutbreakReport.disease_key == disease_key] if disease_key is not None else []
     spans = session.execute(
         select(
             OutbreakReport.disease_key,
@@ -772,7 +943,7 @@ def list_disease_history(session: Session) -> list[DiseaseHistoryRecord]:
             func.min(OutbreakReport.published_at),
             func.max(OutbreakReport.published_at),
         )
-        .where(OutbreakReport.disease_key.is_not(None))
+        .where(OutbreakReport.disease_key.is_not(None), *only)
         .group_by(OutbreakReport.disease_key)
     ).all()
 
@@ -783,7 +954,7 @@ def list_disease_history(session: Session) -> list[DiseaseHistoryRecord]:
             func.count(func.distinct(OutbreakObservation.country_iso3)),
         )
         .join(OutbreakObservation, OutbreakObservation.report_id == OutbreakReport.id)
-        .where(OutbreakReport.disease_key.is_not(None))
+        .where(OutbreakReport.disease_key.is_not(None), *only)
         .group_by(OutbreakReport.disease_key)
     ).all():
         countries[key] = count
@@ -806,6 +977,7 @@ def list_disease_history(session: Session) -> list[DiseaseHistoryRecord]:
         .where(
             OutbreakReport.disease_key.is_not(None),
             OutbreakReport.pathogen_key.is_not(None),
+            *only,
         )
         .group_by(OutbreakReport.disease_key, OutbreakReport.pathogen_key)
     ).all():
@@ -818,7 +990,10 @@ def list_disease_history(session: Session) -> list[DiseaseHistoryRecord]:
     # from the same bulletin about the same episode, so they can be added up
     # without mixing one epidemic's cases into another's deaths.
     by_disease: dict[str, list[SeriesEndpoint]] = {}
-    for (key, _iso3), endpoint in series_endpoints(session).items():
+    built = (
+        endpoints if endpoints is not None else series_endpoints(session, disease_key=disease_key)
+    )
+    for (key, _iso3), endpoint in built.items():
         by_disease.setdefault(key, []).append(endpoint)
     totals = {key: total_counts(group) for key, group in by_disease.items()}
 
@@ -828,6 +1003,7 @@ def list_disease_history(session: Session) -> list[DiseaseHistoryRecord]:
         .where(
             OutbreakReport.disease_key.is_not(None),
             OutbreakReport.disease_label.is_not(None),
+            *only,
         )
         .distinct()
     ).all():
@@ -878,8 +1054,18 @@ class CountrySpreadRecord:
     report_title: str | None
 
 
-def country_spread_for_disease(session: Session, disease_key: str) -> list[CountrySpreadRecord]:
-    """Which countries a disease reached, when it arrived, and with what counts."""
+def country_spread_for_disease(
+    session: Session,
+    disease_key: str,
+    *,
+    endpoints: dict[tuple[str, str], SeriesEndpoint] | None = None,
+) -> list[CountrySpreadRecord]:
+    """Which countries a disease reached, when it arrived, and with what counts.
+
+    ``endpoints`` lets a caller that has already built the paired endpoints
+    hand them over. The spread endpoint needs them for both this and the
+    disease's history row, and building them twice was most of its time.
+    """
     rows = session.execute(
         select(
             OutbreakObservation.country_iso3,
@@ -892,10 +1078,10 @@ def country_spread_for_disease(session: Session, disease_key: str) -> list[Count
         .group_by(OutbreakObservation.country_iso3)
     ).all()
 
-    grounded = {
-        iso3: endpoint
-        for (_key, iso3), endpoint in series_endpoints(session, disease_key=disease_key).items()
-    }
+    built = (
+        endpoints if endpoints is not None else series_endpoints(session, disease_key=disease_key)
+    )
+    grounded = {iso3: endpoint for (_key, iso3), endpoint in built.items()}
 
     latest = {
         iso3: (url, title)

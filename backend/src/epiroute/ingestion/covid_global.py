@@ -254,25 +254,41 @@ def monthly_snapshots(
         )
 
     snapshots: list[Snapshot] = []
+    # The totals a country was last written with. A snapshot repeats every
+    # country's running total whether or not it moved, and storing an unmoved
+    # total as a fresh observation would say the country reported this month
+    # when it did not. In the final month of this file only 49 of 227 countries
+    # moved; the other 178 stopped reporting COVID-19 long ago, and carrying
+    # them forward made every one of them look currently active.
+    #
+    # Dropping them loses nothing downstream: the series is a running maximum,
+    # so a country's total still stands at whatever the last month that moved
+    # it recorded.
+    carried = 0
+    previous: dict[str, tuple[int, int]] = {}
     for month in sorted(last_date):
         as_of = last_date[month]
         counts = on_date.get(as_of, {})
-        # A country with no cases yet is not an outbreak country; including it
-        # would claim WHO reported a zero where it reported nothing of note.
-        reporting = tuple(
-            sorted(
-                (count for count in counts.values() if count.cases > 0 or count.deaths > 0),
-                key=lambda count: count.iso3,
-            )
-        )
+        reporting = []
+        for count in sorted(counts.values(), key=lambda count: count.iso3):
+            # A country with no cases yet is not an outbreak country; including
+            # it would claim WHO reported a zero where it reported nothing.
+            if count.cases <= 0 and count.deaths <= 0:
+                continue
+            if previous.get(count.iso3) == (count.cases, count.deaths):
+                carried += 1
+                continue
+            previous[count.iso3] = (count.cases, count.deaths)
+            reporting.append(count)
         if not reporting:
             continue
-        snapshots.append(Snapshot(as_of=as_of, counts=reporting))
+        snapshots.append(Snapshot(as_of=as_of, counts=tuple(reporting)))
 
     detail = {
         "rows_read": rows_read,
         "rows_without_counts": rows_without_counts,
         "entities_skipped": len(skipped_entities),
+        "rows_unchanged_since_previous_month": carried,
         "months": len(snapshots),
     }
     logger.info("who covid snapshots built", extra=detail)

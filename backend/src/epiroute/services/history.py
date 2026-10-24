@@ -93,12 +93,18 @@ def _coverage_note(record: repo.DiseaseHistoryRecord) -> str | None:
 
 
 def get_disease_spread(session: Session, disease_key: str) -> DiseaseSpreadResponse:
-    history = {r.disease_key: r for r in repo.list_disease_history(session)}
+    # Built once and handed to both: the history row and the per-country
+    # spread are two readings of the same paired endpoints.
+    endpoints = repo.series_endpoints(session, disease_key=disease_key)
+    history = {
+        r.disease_key: r
+        for r in repo.list_disease_history(session, disease_key=disease_key, endpoints=endpoints)
+    }
     record = history.get(disease_key)
     if record is None:
         raise NotFoundError("disease", disease_key)
 
-    spread = repo.country_spread_for_disease(session, disease_key)
+    spread = repo.country_spread_for_disease(session, disease_key, endpoints=endpoints)
     countries: list[CountrySpreadOut] = []
     for order, entry in enumerate(spread, start=1):
         country = reference_repo.get_country(session, entry.country_iso3)

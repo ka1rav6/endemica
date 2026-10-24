@@ -347,6 +347,29 @@ def _origin_prevalence(
         disease_key=focus.disease_key,
         as_of=moment,
     )
+    return prevalence_from_cumulative(
+        series, profile=profile, query=query, population=population, focus=focus, as_of=moment
+    )
+
+
+def prevalence_from_cumulative(
+    series: list[outbreak_repo.CumulativePoint],
+    *,
+    profile: PathogenProfile,
+    query: RiskQuery,
+    population: int,
+    focus: _Focus,
+    as_of: datetime | None = None,
+) -> prev.PrevalenceOutcome:
+    """Prevalence from a series the caller already holds.
+
+    Split out of :func:`_origin_prevalence` so a caller that needs many
+    origins can fetch them in one query and still use the identical
+    arithmetic, caveats and stale-report relaxation.
+    """
+    if not profile.key and not focus.disease_key:
+        return prev.PrevalenceUnavailable("no_pathogen", "no pathogen profile selected")
+    moment = as_of or query.as_of or utc_now()
     points = [
         prev.ReportedCount(
             published_at=point.published_at,

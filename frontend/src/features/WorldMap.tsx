@@ -17,7 +17,7 @@ import type { Feature, FeatureCollection, LineString, Point as GeoPoint } from '
 import { formatCount, formatPassengers } from '@/lib/format';
 import { greatCircleKm, greatCircleLine } from '@/lib/geo';
 import { RISK_COLOR_STOPS, riskColor, riskFillExpression } from '@/lib/riskColor';
-import type { MapSpreadEntry } from '@/lib/spread';
+import { MAX_DISEASE_LOAD, type MapSpreadEntry } from '@/lib/spread';
 import { arcsToCollection, spreadArcs, type SpreadArc } from '@/lib/spreadFlow';
 import type { Country, OriginContribution, Route } from '@/types/api';
 
@@ -804,7 +804,9 @@ export function WorldMap({
     }
     for (const entry of spread) {
       // Green is the low end of the one ramp either way: early arrival when a
-      // single disease is shown, fewest diseases in the combined view.
+      // single disease is shown, fewest diseases in the combined view. The
+      // combined view's scale is fixed (see MAX_DISEASE_LOAD), so a country's
+      // shade does not move when some other country's disease count does.
       map.setFeatureState(
         { source: 'countries', id: entry.iso3 },
         { affected: true, order: entry.arrivalShare },
@@ -1003,8 +1005,8 @@ export function WorldMap({
               ))}
             </span>
             <span className="legend__scale">
-              <span>{activeMode ? 'fewer' : 'earlier'}</span>
-              <span>{activeMode ? 'more' : 'later'}</span>
+              <span>{activeMode ? '1 disease' : 'earlier'}</span>
+              <span>{activeMode ? `${MAX_DISEASE_LOAD}+` : 'later'}</span>
             </span>
             {!activeMode && yearCeiling !== null && (
               <span className="legend__row">
