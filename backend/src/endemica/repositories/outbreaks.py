@@ -384,6 +384,68 @@ def cumulative_series_by_country(
     return series
 
 
+# Below this many paired reports the ratio is noise rather than a measurement.
+MIN_FATALITY_PAIRS = 3
+
+
+def disease_fatality_ratio(
+    session: Session,
+    *,
+    disease_key: str | None = None,
+    pathogen_key: str | None = None,
+) -> float | None:
+    """Deaths per confirmed case for a disease, measured from this archive.
+
+    Many bulletins give a death toll and no case count: cholera has 215 such
+    observations, Ebola 133. Those series carry real information about
+    transmission that is thrown away if deaths cannot be converted into cases,
+    and the conversion needs a fatality ratio.
+
+    The ratio is taken from the same archive rather than from the literature,
+    summed over every grounded observation of this disease that reports both
+    numbers, so it is a property of the data the rest of the answer is built
+    from and moves with it. It is deliberately not a per-country figure: the
+    countries that report deaths without cases are usually the ones with the
+    least complete reporting, so a ratio fitted to them alone would be the
+    most unstable one available.
+
+    Returns None when fewer than :data:`MIN_FATALITY_PAIRS` observations pair
+    the two, or when the result falls outside (0, 1].
+    """
+    statement = select(
+        func.sum(OutbreakObservation.deaths),
+        func.sum(OutbreakObservation.cases_confirmed),
+        func.count(),
+    ).where(
+        OutbreakObservation.grounding_status.in_(
+            (ExtractionStatus.VERIFIED, ExtractionStatus.PARTIAL)
+        ),
+        OutbreakObservation.deaths.is_not(None),
+        OutbreakObservation.cases_confirmed.is_not(None),
+        OutbreakObservation.cases_confirmed > 0,
+    )
+    if disease_key or pathogen_key:
+        statement = statement.join(
+            OutbreakReport, OutbreakReport.id == OutbreakObservation.report_id
+        )
+        if disease_key:
+            statement = statement.where(OutbreakReport.disease_key == disease_key)
+        else:
+            statement = statement.where(OutbreakReport.pathogen_key == pathogen_key)
+    row = session.execute(statement).one_or_none()
+    if row is None:
+        return None
+    deaths, cases, pairs = row
+    if deaths is None or cases is None or int(pairs) < MIN_FATALITY_PAIRS:
+        return None
+    if cases <= 0:
+        return None
+    ratio = float(deaths) / float(cases)
+    if not 0.0 < ratio <= 1.0:
+        return None
+    return ratio
+
+
 def _outbreak_starts_for_reports(
     session: Session,
     grouped: dict[str, dict[tuple[str, str], list[tuple[OutbreakObservation, OutbreakReport]]]],

@@ -459,3 +459,31 @@ def test_flat_cases_and_flat_deaths_still_refuse() -> None:
     )
     assert isinstance(outcome, prev.PrevalenceUnavailable)
     assert outcome.reason == "no_new_cases"
+
+
+def test_a_deaths_only_series_is_not_silence() -> None:
+    """Cholera has 215 observations with a death toll and no case count.
+
+    Read as "no cases" they contribute nothing, which gives a country burying
+    people the same risk as one that never saw the disease.
+    """
+    from datetime import UTC, datetime
+
+    from endemica.epidemiology import prevalence as prev
+
+    points = [
+        prev.ReportedCount(
+            published_at=datetime(2026, 1, 1, tzinfo=UTC), cases_confirmed=round(40 / 0.02)
+        ),
+        prev.ReportedCount(
+            published_at=datetime(2026, 2, 10, tzinfo=UTC), cases_confirmed=round(90 / 0.02)
+        ),
+    ]
+    outcome = prev.prevalence_from_series(
+        points,
+        population=20_000_000,
+        infectious_period_days=5.0,
+        as_of=datetime(2026, 2, 20, tzinfo=UTC),
+    )
+    assert isinstance(outcome, prev.PrevalenceEstimate)
+    assert outcome.central > 0

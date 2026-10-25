@@ -54,6 +54,11 @@ When the aggregate rate is missing but origin-level rates were still returned,
 those origin rates are summed and used. They are not used when an aggregate
 rate is present, because the listed origins can be a truncated top-N.
 
+A presence score of 0 is not an index on its own. It says only that nothing
+has been reported in the destination, which is absence of evidence; combined
+with no importation, establishment or connectivity term there is nothing to
+average, and the index is reported as not estimable rather than as 0.0.
+
 Weights when all four exist: presence 0.40, importation 0.30, establishment
 0.15, connectivity 0.15. The weights of the inputs that exist are scaled so
 they sum to 1. The displayed index is that mean, rounded to one decimal
@@ -276,6 +281,14 @@ def compute_travel_index(inputs: TravelIndexInputs) -> TravelIndexResult:
     present: dict[ComponentKey, float] = {
         key: value for key, value in raw.items() if value is not None
     }
+    if set(present) == {"presence"} and present["presence"] == PRESENCE_ABSENT:
+        # Nothing is known about this destination except that it has not
+        # reported the disease, which is absence of evidence rather than
+        # evidence of absence. Scoring it 0.0 "Low" states a confident
+        # finding of no risk built from no measurement at all, and it reads
+        # identically for a neighbour of the outbreak and for an island on
+        # the other side of the world. The index is not estimable here.
+        present = {}
     total_weight = sum(WEIGHTS[key] for key in present)
     score: float | None = None
     band: BandLabel | None = None
@@ -287,8 +300,12 @@ def compute_travel_index(inputs: TravelIndexInputs) -> TravelIndexResult:
     components: list[TravelComponentScore] = []
     for key in COMPONENT_ORDER:
         value = raw[key]
+        # The presence term can be measured and still not be enough to form
+        # an index on its own, so availability stays a property of the value.
         available = value is not None
-        weight = 0.0 if not available else min(1.0, WEIGHTS[key] / total_weight)
+        weight = (
+            0.0 if not available or total_weight <= 0 else min(1.0, WEIGHTS[key] / total_weight)
+        )
         components.append(
             TravelComponentScore(
                 key=key,

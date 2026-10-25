@@ -348,8 +348,40 @@ def _origin_prevalence(
         as_of=moment,
     )
     return prevalence_from_cumulative(
-        series, profile=profile, query=query, population=population, focus=focus, as_of=moment
+        series,
+        profile=profile,
+        query=query,
+        population=population,
+        focus=focus,
+        as_of=moment,
+        fatality_ratio=outbreak_repo.disease_fatality_ratio(
+            session,
+            disease_key=focus.disease_key,
+            pathogen_key=None if focus.disease_key else profile.key,
+        ),
     )
+
+
+# The case tiers a series may be built from, best evidence first.
+#
+# WHO bulletins do not all report the same thing. Of the diseases in the
+# archive, SARS carries no confirmed count at all (14 probable rows and 2
+# suspected), and anthrax and undifferentiated viral haemorrhagic fever carry
+# only suspected ones. Reading `cases_confirmed` alone threw those series
+# away and left 31 of 56 diseases scoring 0.0 everywhere, which says "no risk"
+# about a disease the model simply refused to look at.
+#
+# A series is built from one tier throughout. Confirmed, probable and
+# suspected counts are different measurements with different denominators, and
+# differencing across them would manufacture incidence out of a change in
+# definition. The tier used is named in the estimate's caveats, because a
+# number resting on suspected cases is weaker evidence than one resting on
+# confirmed cases and the screen should not pretend otherwise.
+_CASE_TIERS: tuple[tuple[str, str], ...] = (
+    ("cases_confirmed", "confirmed"),
+    ("cases_probable", "probable"),
+    ("cases_suspected", "suspected"),
+)
 
 
 def prevalence_from_cumulative(
@@ -360,59 +392,176 @@ def prevalence_from_cumulative(
     population: int,
     focus: _Focus,
     as_of: datetime | None = None,
+    fatality_ratio: float | None = None,
 ) -> prev.PrevalenceOutcome:
     """Prevalence from a series the caller already holds.
 
     Split out of :func:`_origin_prevalence` so a caller that needs many
     origins can fetch them in one query and still use the identical
     arithmetic, caveats and stale-report relaxation.
+
+    Each case tier is tried in turn and the first that yields an estimate is
+    returned. When none does, the refusal from the confirmed tier is returned,
+    because that is the one whose absence a reader most needs explained.
     """
     if not profile.key and not focus.disease_key:
         return prev.PrevalenceUnavailable("no_pathogen", "no pathogen profile selected")
     moment = as_of or query.as_of or utc_now()
-    points = [
-        prev.ReportedCount(
-            published_at=point.published_at,
-            cases_confirmed=point.cases_confirmed,
-            outbreak_started_on=point.outbreak_started_on,
-            deaths=point.deaths,
-        )
-        for point in series
-        if point.cases_confirmed is not None
-    ]
     band = (
         query.underreporting_low,
         query.underreporting_central,
         query.underreporting_high,
     )
+    first_refusal: prev.PrevalenceOutcome | None = None
+    for attribute, label in _CASE_TIERS:
+        points = [
+            prev.ReportedCount(
+                published_at=point.published_at,
+                cases_confirmed=counted,
+                outbreak_started_on=point.outbreak_started_on,
+                deaths=point.deaths,
+            )
+            for point in series
+            if (counted := getattr(point, attribute)) is not None
+        ]
+        if not points:
+            continue
+        outcome = _prevalence_with_stale_relaxation(
+            points,
+            profile=profile,
+            underreporting=band,
+            population=population,
+            moment=moment,
+        )
+        if isinstance(outcome, prev.PrevalenceEstimate):
+            if label == "confirmed":
+                return outcome
+            return replace(
+                outcome,
+                caveats=(
+                    *outcome.caveats,
+                    f"This origin has no confirmed case series for this disease, so the "
+                    f"estimate is built on {label} cases. Those are a broader and less "
+                    f"certain category, and the case definition behind them can change "
+                    f"between reports.",
+                ),
+            )
+        if first_refusal is None:
+            first_refusal = outcome
+    from_deaths = _prevalence_from_deaths_only(
+        series,
+        profile=profile,
+        underreporting=band,
+        population=population,
+        moment=moment,
+        fatality_ratio=fatality_ratio,
+    )
+    if from_deaths is not None:
+        return from_deaths
+    if first_refusal is not None:
+        return first_refusal
+    return prev.PrevalenceUnavailable(
+        reason="no_reported_cases",
+        detail="no grounded case count is available for this origin",
+    )
+
+
+def _prevalence_from_deaths_only(
+    series: list[outbreak_repo.CumulativePoint],
+    *,
+    profile: PathogenProfile,
+    underreporting: tuple[float, float, float],
+    population: int,
+    moment: datetime,
+    fatality_ratio: float | None,
+) -> prev.PrevalenceEstimate | None:
+    """Convert a deaths-only series into cases with the disease's own ratio.
+
+    Some countries report a death toll and never a case count -- across this
+    archive that is 215 cholera observations and 133 Ebola ones. Read as "no
+    cases" they contribute nothing, which is how a country burying people
+    came to carry the same risk as one that had never heard of the disease.
+
+    The ratio comes from every grounded observation of the same disease that
+    reports both numbers, so nothing enters from outside the data. The result
+    is an estimate resting on a ratio applied to a lagging indicator, and it
+    says so.
+    """
+    if fatality_ratio is None or not 0.0 < fatality_ratio <= 1.0:
+        return None
+    points = [
+        prev.ReportedCount(
+            published_at=point.published_at,
+            cases_confirmed=max(1, round(point.deaths / fatality_ratio)),
+            outbreak_started_on=point.outbreak_started_on,
+        )
+        for point in series
+        if point.deaths is not None
+        and point.cases_confirmed is None
+        and point.cases_probable is None
+        and point.cases_suspected is None
+    ]
+    if len(points) < 1:
+        return None
+    outcome = _prevalence_with_stale_relaxation(
+        points,
+        profile=profile,
+        underreporting=underreporting,
+        population=population,
+        moment=moment,
+    )
+    if not isinstance(outcome, prev.PrevalenceEstimate):
+        return None
+    return replace(
+        outcome,
+        caveats=(
+            *outcome.caveats,
+            f"This origin reports deaths for this disease and no case count. Cases "
+            f"were implied from the deaths using a fatality ratio of "
+            f"{fatality_ratio:.1%}, measured across every report of this disease "
+            f"that gives both numbers. Deaths lag infection and the ratio is an "
+            f"average over countries, so this is the weakest of the case estimates.",
+        ),
+    )
+
+
+def _prevalence_with_stale_relaxation(
+    points: list[prev.ReportedCount],
+    *,
+    profile: PathogenProfile,
+    underreporting: tuple[float, float, float],
+    population: int,
+    moment: datetime,
+) -> prev.PrevalenceOutcome:
+    """The series estimator, retried once against the stale-report limit."""
     outcome = prev.prevalence_from_series(
         points,
         population=population,
         infectious_period_days=profile.infectious_period_days,
-        underreporting=band,
+        underreporting=underreporting,
         as_of=moment,
     )
-    if isinstance(outcome, prev.PrevalenceUnavailable) and outcome.reason == "report_too_old":
-        relaxed = prev.prevalence_from_series(
-            points,
-            population=population,
-            infectious_period_days=profile.infectious_period_days,
-            underreporting=band,
-            as_of=moment,
-            max_report_age_days=prev.STALE_REPORT_MAX_AGE_DAYS,
+    if not (isinstance(outcome, prev.PrevalenceUnavailable) and outcome.reason == "report_too_old"):
+        return outcome
+    relaxed = prev.prevalence_from_series(
+        points,
+        population=population,
+        infectious_period_days=profile.infectious_period_days,
+        underreporting=underreporting,
+        as_of=moment,
+        max_report_age_days=prev.STALE_REPORT_MAX_AGE_DAYS,
+    )
+    if isinstance(relaxed, prev.PrevalenceEstimate):
+        return replace(
+            relaxed,
+            caveats=(
+                *relaxed.caveats,
+                "The latest report is older than 60 days. It is still used because it "
+                "is the only grounded case series for this origin. The outbreak may "
+                "have ended.",
+            ),
         )
-        if isinstance(relaxed, prev.PrevalenceEstimate):
-            return replace(
-                relaxed,
-                caveats=(
-                    *relaxed.caveats,
-                    "The latest report is older than 60 days. It is still used because it "
-                    "is the only grounded case series for this origin. The outbreak may "
-                    "have ended.",
-                ),
-            )
-        return relaxed
-    return outcome
+    return relaxed
 
 
 def _collect_origins(

@@ -95,6 +95,11 @@ def rank_next_countries(
         as_of=moment,
     )
     origin_prevalence: dict[str, float] = {}
+    fatality_ratio = outbreak_repo.disease_fatality_ratio(
+        session,
+        disease_key=focus.disease_key,
+        pathogen_key=None if focus.disease_key else profile.key,
+    )
     for origin in reported:
         country = by_iso3.get(origin)
         if country is None or not country.population:
@@ -106,6 +111,7 @@ def rank_next_countries(
             population=country.population,
             focus=focus,
             as_of=moment,
+            fatality_ratio=fatality_ratio,
         )
         if isinstance(outcome, prev.PrevalenceEstimate):
             origin_prevalence[origin] = outcome.central

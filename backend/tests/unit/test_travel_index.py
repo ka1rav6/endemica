@@ -44,12 +44,29 @@ def _component(result: TravelIndexResult, key: str) -> TravelComponentScore:
 
 class TestPresence:
     def test_no_report_scores_zero_and_is_not_treated_as_missing(self) -> None:
-        result = _index(presence_status="not_reported")
+        # The presence term itself is measured: nothing was reported here.
+        result = _index(presence_status="not_reported", importation_probability=0.01)
         presence = _component(result, "presence")
         assert presence.available is True
         assert presence.score == 0
-        assert result.score == 0
-        assert result.band == "Low"
+        assert result.score is not None
+
+    def test_nothing_but_an_absent_presence_is_not_an_index(self) -> None:
+        # "Not reported here" and nothing else is absence of evidence. Scoring
+        # it 0.0 Low reads as a finding of no risk, and reads the same for a
+        # neighbour of the outbreak as for an island on the far side of the
+        # world. This is what made most diseases show 0.0 everywhere.
+        result = _index(presence_status="not_reported")
+        assert result.score is None
+        assert result.band is None
+        assert _component(result, "presence").score == 0
+
+    def test_a_country_that_has_reported_still_scores_on_presence_alone(self) -> None:
+        # A positive presence term is a real measurement of local risk, so it
+        # stands on its own even when nothing else can be estimated.
+        result = _index(presence_status="reported")
+        assert result.score is not None
+        assert result.score > 0
 
     def test_unknown_status_is_omitted(self) -> None:
         result = _index(presence_status="not_estimable")
