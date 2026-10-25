@@ -14,8 +14,10 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 
 setWorkerUrl(maplibreWorkerUrl);
 import type { Feature, FeatureCollection, LineString, Point as GeoPoint } from 'geojson';
+import { selectAirports, type AirportCollection } from '@/lib/airports';
 import { formatCount, formatPassengers } from '@/lib/format';
-import { greatCircleKm, greatCircleLine } from '@/lib/geo';
+import { greatCircleLine, type Point } from '@/lib/geo';
+import { landAnchor } from '@/lib/landmass';
 import { RISK_COLOR_STOPS, riskColor, riskFillExpression } from '@/lib/riskColor';
 import { MAX_DISEASE_LOAD, type MapSpreadEntry } from '@/lib/spread';
 import { arcsToCollection, spreadArcs, type SpreadArc } from '@/lib/spreadFlow';
@@ -25,12 +27,13 @@ const API_BOUNDARIES_URL = '/data/country_boundaries.geojson';
 const BUNDLED_BOUNDARIES_URL = '/boundaries/countries.geojson';
 const AIRPORTS_URL = '/data/airports.geojson';
 
-// The airports of one country, busiest first. Past this the dots overlap into
-// a blob and say nothing, and every country but a handful has fewer anyway.
-const MAX_AIRPORTS = 40;
 // Below this the whole country is a few pixels wide, so its airports would all
 // land on the same spot.
 const AIRPORT_MIN_ZOOM = 2.6;
+// How many airports fit depends on the zoom, so the dots are re-chosen as it
+// changes. Rounding to half a level keeps that to a few recalculations per
+// flight rather than one per frame.
+const ZOOM_STEP = 2;
 const HOME_VIEW = { center: [12, 22] as [number, number], zoom: 1.5 };
 
 const C = {
@@ -109,17 +112,15 @@ function arcFeatures(
   return { type: 'FeatureCollection', features };
 }
 
-function pointFor(country: Country | undefined): FeatureCollection<GeoPoint> {
-  if (!country || country.centroid_lat === null || country.centroid_lon === null) {
-    return { type: 'FeatureCollection', features: [] };
-  }
+function pointFor(country: Country | undefined, centre: Point | null): FeatureCollection<GeoPoint> {
+  if (!country || !centre) return { type: 'FeatureCollection', features: [] };
   return {
     type: 'FeatureCollection',
     features: [
       {
         type: 'Feature',
         properties: { iso3: country.iso3 },
-        geometry: { type: 'Point', coordinates: [country.centroid_lon, country.centroid_lat] },
+        geometry: { type: 'Point', coordinates: [centre.lon, centre.lat] },
       },
     ],
   };
@@ -153,71 +154,32 @@ function graticule(): FeatureCollection<LineString> {
   return { type: 'FeatureCollection', features };
 }
 
-interface AirportProperties {
-  iata: string;
-  name: string;
-  iso3: string;
-  routes: number;
-}
-
-let airportRequest: Promise<FeatureCollection<GeoPoint, AirportProperties>> | null = null;
+let airportRequest: Promise<AirportCollection> | null = null;
 
 /** Fetched once per session, then shared: the file is the same for every country. */
-function loadAirports(): Promise<FeatureCollection<GeoPoint, AirportProperties>> {
+function loadAirports(): Promise<AirportCollection> {
   airportRequest ??= fetch(AIRPORTS_URL).then(async (response) => {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return (await response.json()) as FeatureCollection<GeoPoint, AirportProperties>;
+    return (await response.json()) as AirportCollection;
   });
   return airportRequest;
 }
 
 /**
- * The selected country's airports, scored by how far each one is from the
- * outbreak centre.
- *
- * WHO Disease Outbreak News is reported at country level, so the honest
- * epicentre is the country's own centroid - the same point the pin marks. The
- * distance is scored 0-10 across this country's own airports, so the ramp
- * always spans the country rather than the globe.
+ * Where to draw a country on the map: a point on its own main landmass, not
+ * the stored centroid, which averages in distant territory and can land in
+ * the sea. See `landAnchor`.
  */
-function airportFeatures(
-  collection: FeatureCollection<GeoPoint, AirportProperties> | null,
+function anchorFor(
+  boundaries: BoundaryCollection | null,
   country: Country | undefined,
-): FeatureCollection<GeoPoint> {
-  const empty: FeatureCollection<GeoPoint> = { type: 'FeatureCollection', features: [] };
-  if (!collection || !country) return empty;
-  const { centroid_lat: lat, centroid_lon: lon } = country;
-  if (lat === null || lon === null) return empty;
-
-  const own = collection.features
-    .filter((feature) => feature.properties.iso3 === country.iso3)
-    .sort((x, y) => y.properties.routes - x.properties.routes)
-    .slice(0, MAX_AIRPORTS);
-  if (own.length === 0) return empty;
-
-  const measured = own.map((feature) => {
-    const [airportLon, airportLat] = feature.geometry.coordinates;
-    return {
-      feature,
-      km: greatCircleKm({ lat, lon }, { lat: airportLat ?? lat, lon: airportLon ?? lon }),
-    };
-  });
-  const farthest = Math.max(...measured.map((entry) => entry.km), 1);
-  const busiest = Math.max(...measured.map((entry) => entry.feature.properties.routes), 1);
-
-  return {
-    type: 'FeatureCollection',
-    features: measured.map(({ feature, km }) => ({
-      type: 'Feature',
-      properties: {
-        ...feature.properties,
-        km: Math.round(km),
-        distance: (km / farthest) * 10,
-        weight: feature.properties.routes / busiest,
-      },
-      geometry: feature.geometry,
-    })),
-  };
+): Point | null {
+  if (!country || country.centroid_lat === null || country.centroid_lon === null) return null;
+  const fallback: Point = { lat: country.centroid_lat, lon: country.centroid_lon };
+  const feature = boundaries?.features.find(
+    (candidate) => candidate.properties['iso3'] === country.iso3,
+  );
+  return feature ? landAnchor(feature.geometry, fallback) : fallback;
 }
 
 async function loadBoundaries(): Promise<BoundaryCollection> {
@@ -318,9 +280,9 @@ export function WorldMap({
   const flewTo = useRef<string | null>(null);
   const [ready, setReady] = useState(false);
   const [boundaryError, setBoundaryError] = useState<string | null>(null);
-  const [airports, setAirports] = useState<FeatureCollection<GeoPoint, AirportProperties> | null>(
-    null,
-  );
+  const [boundaries, setBoundaries] = useState<BoundaryCollection | null>(null);
+  const [zoom, setZoom] = useState(HOME_VIEW.zoom);
+  const [airports, setAirports] = useState<AirportCollection | null>(null);
   const selectRef = useRef(onSelect);
   selectRef.current = onSelect;
   const flowLinesRef = useRef<SpreadArc[]>([]);
@@ -427,6 +389,7 @@ export function WorldMap({
         try {
           const data = await loadBoundaries();
           if (cancelled) return;
+          setBoundaries(data);
 
           map.addSource('graticule', { type: 'geojson', data: graticule() });
           map.addLayer({
@@ -575,14 +538,17 @@ export function WorldMap({
             source: 'airports',
             minzoom: AIRPORT_MIN_ZOOM,
             paint: {
+              // `weight` is already the square root of the airport's share of
+              // the country's routes, so a linear ramp here makes the dot's
+              // area, not its radius, stand for the traffic.
               'circle-radius': [
                 'interpolate',
                 ['linear'],
                 ['get', 'weight'],
                 0,
-                3,
+                2.6,
                 1,
-                8.5,
+                8,
               ] as ExpressionSpecification,
               'circle-color': riskFillExpression([
                 'coalesce',
@@ -771,6 +737,12 @@ export function WorldMap({
       })();
     };
 
+    // Half-level steps, so the airport dots are re-chosen a handful of times
+    // during a flight instead of on every frame. React drops the repeats.
+    map.on('zoom', () => {
+      setZoom(Math.round(map.getZoom() * ZOOM_STEP) / ZOOM_STEP);
+    });
+
     // Whichever arrives first wins; `start` is guarded against running twice.
     // `isStyleLoaded` alone is not enough, because that flag only flips during
     // a draw and a hidden page draws nothing.
@@ -865,12 +837,16 @@ export function WorldMap({
     flowAnimRef.current = reduced ? null : { start: performance.now(), duration: 680 };
   }, [ready, countries, spread, yearCeiling, spreadSpan, activeMode]);
 
+  // The point this country is drawn at: its own main landmass, not the stored
+  // centroid, which for a country with distant territory can sit in the sea.
+  const anchor = useMemo(() => anchorFor(boundaries, selected), [boundaries, selected]);
+
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
     const pin = map.getSource('pin');
-    if (pin instanceof GeoJSONSource) void pin.setData(pointFor(selected));
-  }, [ready, selected]);
+    if (pin instanceof GeoJSONSource) void pin.setData(pointFor(selected, anchor));
+  }, [ready, selected, anchor]);
 
   // Fetched the first time a country is opened, not on load: nothing is drawn
   // from it until then, and the file is the largest the map pulls.
@@ -890,7 +866,10 @@ export function WorldMap({
     };
   }, [selected, airports]);
 
-  const countryAirports = useMemo(() => airportFeatures(airports, selected), [airports, selected]);
+  const countryAirports = useMemo(
+    () => selectAirports(airports, selected?.iso3, anchor, zoom),
+    [airports, selected, anchor, zoom],
+  );
 
   useEffect(() => {
     const map = mapRef.current;
@@ -901,21 +880,19 @@ export function WorldMap({
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !ready || !selected || flewTo.current === selected.iso3) return;
-    const { centroid_lat: lat, centroid_lon: lon } = selected;
-    if (lat === null || lon === null) return;
+    if (!map || !ready || !selected || !anchor || flewTo.current === selected.iso3) return;
     flewTo.current = selected.iso3;
     // Close enough that the country's airports come in, which is the point of
     // opening one: the dots and the pin together show where its traffic sits
     // relative to where the outbreak is reported.
     const camera = {
-      center: [lon, lat] as [number, number],
+      center: [anchor.lon, anchor.lat] as [number, number],
       zoom: Math.max(map.getZoom(), 3.1),
       essential: true,
     };
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) map.jumpTo(camera);
     else map.easeTo({ ...camera, duration: 950 });
-  }, [ready, selected]);
+  }, [ready, selected, anchor]);
 
   const resetView = () => {
     const map = mapRef.current;

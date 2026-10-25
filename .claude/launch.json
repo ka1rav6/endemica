@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "endemica-web",
+      "runtimeExecutable": "just",
+      "runtimeArgs": ["dev-frontend"],
+      "port": 5173
+    }
+  ]
+}
