@@ -50,9 +50,13 @@ export function TopBar({
           window.location.reload();
         }}
       >
-        <span className="brand__mark" aria-hidden="true">
-          E
-        </span>
+        <img
+          className="brand__mark"
+          src="/brand/endemica-mark-64.png"
+          alt=""
+          width={24}
+          height={24}
+        />
         <span className="brand__name">Endemica</span>
         <span className="brand__tag">Outbreak atlas</span>
       </button>

@@ -227,13 +227,9 @@ a:hover {
 .brand__mark {
   width: 24px;
   height: 24px;
-  display: grid;
-  place-items: center;
-  border-radius: 7px;
-  background: linear-gradient(140deg, var(--accent), var(--cool));
-  color: var(--accent-ink);
-  font-weight: 800;
-  font-size: 13px;
+  display: block;
+  object-fit: contain;
+  flex-shrink: 0;
 }
 
 .brand__name {

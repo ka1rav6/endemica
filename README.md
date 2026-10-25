@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="frontend/public/brand/endemica-logo.png" alt="endemica" width="320">
+</p>
+
 # endemica
 
 Outbreak intelligence from public health sources. Our submission for the hackIIITD hackathon — Team Prometheus.
