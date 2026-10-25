@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from epiroute.epidemiology.travel_index import (
+from endemica.epidemiology.travel_index import (
     CONNECTIVITY_RATE_CAP,
     CONNECTIVITY_RATE_FLOOR,
     LARGE_CONFIRMED_CASES,

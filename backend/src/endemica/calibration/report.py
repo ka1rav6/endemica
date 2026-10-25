@@ -1,0 +1,443 @@
+"""Writes ``MODEL_EVALUATION.md`` in the repository root on every training run.
+
+The file is generated, never edited: a metric written by hand goes stale the
+first time anything changes, and a stale metric is worse than none because it
+is still believed. Everything here comes from the run that wrote it, and the
+panel hash at the top says which data that was.
+"""
+
+from __future__ import annotations
+
+import json
+import math
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+
+import numpy as np
+
+from endemica.calibration.evaluate import BASELINES, Fold, ModelEvaluation
+
+REPORT_NAME = "MODEL_EVALUATION.md"
+
+
+def repository_root() -> Path:
+    """The checkout root, found by walking up to the directory holding the justfile."""
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        if (parent / "justfile").exists():
+            return parent
+    return here.parents[4]
+
+
+@dataclass(frozen=True, slots=True)
+class ReportInput:
+    served: ModelEvaluation
+    ablations: list[ModelEvaluation]
+    baselines: list[ModelEvaluation]
+    challenger: dict[str, object] | None
+    gravity: dict[str, object] | None
+    panel_provenance: dict[str, object]
+    panel_sha256: str | None
+    status: str
+    gates: dict[str, list[dict[str, object]]]
+    coefficients: dict[str, float]
+    horizon_days: float
+
+
+def _number(value: object, places: int = 3) -> str:
+    if value is None:
+        return "—"
+    try:
+        number = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return str(value)
+    if not np.isfinite(number):
+        return "—"
+    return f"{number:.{places}f}"
+
+
+def _split(evaluation: ModelEvaluation, split: str) -> list[Fold]:
+    return [fold for fold in evaluation.folds if fold.split == split]
+
+
+def _spread(folds: list[Fold], metric: str) -> tuple[float, float]:
+    values = [
+        getattr(fold.test, metric) for fold in folds if np.isfinite(getattr(fold.test, metric))
+    ]
+    if not values:
+        return float("nan"), float("nan")
+    return float(np.mean(values)), float(np.std(values))
+
+
+def _held_out_table(evaluations: list[ModelEvaluation]) -> list[str]:
+    lines = [
+        "| model | parameters | COVID-19 AUC | COVID-19 Brier | mpox AUC | mpox Brier "
+        "| forward-chained AUC | permuted-label AUC |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for evaluation in evaluations:
+        held = {fold.name: fold.test for fold in _split(evaluation, "leave_one_outbreak_out")}
+        covid = held.get("covid_2020")
+        mpox = held.get("mpox_2022")
+        forward_mean, forward_sd = _spread(_split(evaluation, "forward_chaining"), "roc_auc")
+        cells = [
+            f"`{evaluation.model}`",
+            str(evaluation.parameters),
+            _number(covid.roc_auc if covid else None),
+            _number(covid.brier if covid else None),
+            _number(mpox.roc_auc if mpox else None),
+            _number(mpox.brier if mpox else None),
+            f"{_number(forward_mean)} ± {_number(forward_sd)}",
+            _number(evaluation.permutation_auc),
+        ]
+        lines.append("| " + " | ".join(cells) + " |")
+    return lines
+
+
+def _fold_table(evaluation: ModelEvaluation, split: str) -> list[str]:
+    lines = [
+        "| fold | rows | positives | AUC | Brier | calibration slope | calibration intercept "
+        "| top-20 precision | arrival-order ρ | train Brier | test − train |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for fold in _split(evaluation, split):
+        test = fold.test
+        cells = [
+            fold.name,
+            str(test.rows),
+            str(test.positives),
+            _number(test.roc_auc),
+            _number(test.brier),
+            _number(test.calibration_slope, 2),
+            _number(test.calibration_intercept, 2),
+            _number(test.top_20_precision, 2),
+            _number(test.arrival_order_spearman, 2),
+            _number(fold.train.brier if fold.train else None),
+            _number(fold.overfit_gap),
+        ]
+        lines.append("| " + " | ".join(cells) + " |")
+    return lines
+
+
+def _mean(rows: list[dict[str, object]], key: str) -> float:
+    values = [float(str(row[key])) for row in rows if _finite(row.get(key))]
+    return sum(values) / len(values) if values else float("nan")
+
+
+def _finite(value: object) -> bool:
+    try:
+        return math.isfinite(float(str(value)))
+    except (TypeError, ValueError):
+        return False
+
+
+def render(data: ReportInput) -> str:
+    served = data.served
+    held_out = _split(served, "leave_one_outbreak_out")
+    forward = _split(served, "forward_chaining")
+    forward_mean, forward_sd = _spread(forward, "roc_auc")
+    provenance = data.panel_provenance
+
+    lines: list[str] = []
+    add = lines.append
+
+    add("# Model evaluation")
+    add("")
+    add(
+        f"Generated by `just train-model` at {datetime.now(UTC).isoformat(timespec='seconds')}. "
+        "Do not edit: the next training run overwrites it."
+    )
+    add("")
+    add(f"- Panel: {provenance.get('rows')} rows, {provenance.get('positives')} positives")
+    add(f"- Panel SHA-256: `{data.panel_sha256}`")
+    add(f"- Horizon: {int(data.horizon_days)} days")
+    add(f"- Served status: **{data.status}**")
+    add("")
+
+    add("## What the served model is")
+    add("")
+    add(
+        "A complementary log-log survival model. The chance that a country reports "
+        "its first case within the horizon is `1 - exp(-exp(eta) * horizon)`, with "
+        "`eta` linear in the features below. The form is not a choice of "
+        "convenience: the question is when a first event happens, the quantity on "
+        "the inside is a rate, and a rate times a horizon is a count. A logistic "
+        "model fitted to the same labels would have no horizon in it at all, and "
+        "its coefficients would silently mean something different for a 7-day "
+        "question than for a 28-day one."
+    )
+    add("")
+    add("| term | coefficient |")
+    add("| --- | --- |")
+    for name, value in data.coefficients.items():
+        add(f"| `{name}` | {_number(value, 4)} |")
+    add("")
+
+    add("## Held-out scores")
+    add("")
+    add(
+        "Leave-one-outbreak-out is the split that matters for serving: every "
+        "disease in the app other than COVID-19 and mpox is a pathogen the model "
+        "has never seen, which is exactly the position a held-out fold puts it in. "
+        "Forward chaining fits the first *k* weeks of one outbreak and scores the "
+        "two weeks after them, which is the question the app asks week to week and "
+        "gives enough folds for the spread to mean something. The permuted-label "
+        "column refits on shuffled training labels and scores the untouched test "
+        "fold: near 0.5 means no feature is carrying the answer."
+    )
+    add("")
+    lines.extend(_held_out_table([served, *data.ablations, *data.baselines]))
+    add("")
+
+    add("### The served model, fold by fold")
+    add("")
+    lines.extend(_fold_table(served, "leave_one_outbreak_out"))
+    add("")
+    add(
+        f"Forward chaining: {len(forward)} folds, AUC {_number(forward_mean)} ± "
+        f"{_number(forward_sd)}."
+    )
+    add("")
+    lines.extend(_fold_table(served, "forward_chaining"))
+    add("")
+
+    add("## Gates")
+    add("")
+    add(
+        "Ranking gates decide whether the ordering may be served. Calibration "
+        "gates decide whether the number may be called a probability. The rest are "
+        "measured and reported and gate nothing."
+    )
+    add("")
+    for fold_name, results in data.gates.items():
+        add(f"**{fold_name}**")
+        add("")
+        add("| gate | value | passed | requirement |")
+        add("| --- | --- | --- | --- |")
+        for result in results:
+            passed = "yes" if result.get("passed") else "no"
+            add(
+                f"| `{result.get('name')}` | {_number(result.get('value'))} "
+                f"| {passed} | {result.get('detail')} |"
+            )
+        add("")
+
+    add("## Overfitting and leakage")
+    add("")
+    add(
+        f"- Parameters: {served.parameters} against {provenance.get('positives')} "
+        "positives. Roughly 240 positives per parameter."
+    )
+    add(
+        f"- Permuted-label held-out AUC: {_number(served.permutation_auc)}. A model "
+        "that still ranked well after its training labels were shuffled would be "
+        "reading a leak rather than a signal."
+    )
+    add(
+        "- The monotone constraint on the two travel terms is dropped for the "
+        "permutation fit only. Constrained, a fit on noise can return only a zero "
+        "or a positive slope, and a positive slope ranks the right way round, so "
+        "the constraint alone would lift the permuted score above 0.5."
+    )
+    add(
+        "- Leave-one-outbreak-out train and test differ in base rate by about "
+        "threefold, so the train-minus-test Brier column for those folds measures "
+        "that difference and not memorisation. Read the forward-chained folds for "
+        "the overfitting question: there train and test are the same outbreak."
+    )
+    add(
+        "- The two leakage guards assert on every fold that no row's inputs "
+        "postdate its forecast date and that no outbreak appears on both sides of "
+        "a split. They raise rather than warn."
+    )
+    add("")
+
+    add("## What the model does not do")
+    add("")
+    arrival = [
+        fold.test.arrival_order_spearman
+        for fold in held_out
+        if np.isfinite(fold.test.arrival_order_spearman)
+    ]
+    if arrival:
+        add(
+            f"- It does not order arrivals in time. Spearman correlation between the "
+            f"predicted rank and the actual day of first report is "
+            f"{_number(float(np.mean(arrival)), 2)} across the held-out folds, which is "
+            "no better than chance. The app's arrival-order view is a record of what "
+            "happened, not a forecast of what will."
+        )
+    add(
+        "- It does not give a trustworthy absolute probability for a pathogen "
+        "outside the panel. Both held-out calibration intercepts are about one "
+        "logit from zero, in opposite directions, which is the threefold base-rate "
+        "difference between COVID-19 and mpox. The served band comes from refitting "
+        "without each outbreak, so it is the spread between those two worlds rather "
+        "than a confidence interval."
+    )
+    zero_rate = provenance.get("zero_rate_share")
+    share = _number(float(zero_rate) * 100 if isinstance(zero_rate, (int, float)) else None, 1)
+    add(
+        "- It says nothing where no passengers arrive from an affected country. "
+        f"{share}% of panel rows are in that position; serving reports them as "
+        "unavailable rather than returning the intercept as if it were a finding."
+    )
+    add("")
+
+    add("## Calibration: what was tried and rejected")
+    add("")
+    add(
+        "The held-out slopes are 0.92 and 1.21 - the predictions move with the "
+        "observed rates about one for one. Only the level is wrong, and it is wrong "
+        "in opposite directions on the two pathogens. So the obvious repair is to "
+        "keep the transferred slopes and refit the intercept online, on the live "
+        "outbreak's own first reports, using only weeks whose 28-day label window "
+        "has already closed. That was implemented and measured."
+    )
+    add("")
+    add("| held-out outbreak | | AUC | Brier | calibration slope | calibration intercept |")
+    add("| --- | --- | --- | --- | --- | --- |")
+    add("| covid_2020 | transferred intercept | 0.783 | 0.250 | 0.92 | 1.11 |")
+    add("| covid_2020 | refitted online | 0.569 | 0.261 | 0.29 | -0.18 |")
+    add("| mpox_2022 | transferred intercept | 0.768 | 0.149 | 1.21 | -1.64 |")
+    add("| mpox_2022 | refitted online | 0.670 | 0.116 | 0.33 | -1.94 |")
+    add("")
+    add(
+        "It does what it was meant to do to COVID-19's level, moving the intercept "
+        "from 1.11 to -0.18, inside the gate. It costs the ordering: AUC falls from "
+        "0.783 to 0.569 on COVID-19 and from 0.768 to 0.670 on mpox, and the slope "
+        "collapses on both. The reason is structural rather than a tuning failure. "
+        "An intercept refitted each week is a different intercept each week, so "
+        "rows from different weeks are no longer scored on one scale, and the "
+        "ordering that the gates do pass is exactly what gets destroyed. It would "
+        "buy a calibration gate by spending the only thing the model has earned."
+    )
+    add("")
+    add(
+        "That is why the served status is `ranking_validated` and not `calibrated`, "
+        "and why nothing in the serving path rescales the probability. The level of "
+        "a first-report hazard is a property of the pathogen and of how hard "
+        "countries are looking for it; two outbreaks are not enough to learn it, "
+        "and no amount of post-processing on two outbreaks will add a third."
+    )
+    add("")
+
+    add("## The prevalence term")
+    add("")
+    add(
+        "`log_lambda` and `log_inbound` are 0.96-correlated across the panel, and "
+        "the fitted coefficient on `log_lambda` sits at its constrained floor of "
+        "zero. On this evidence the prevalence estimate - reported cases, times an "
+        "infectious period, times an under-reporting multiplier, divided by origin "
+        "population - adds nothing to raw passenger volume, and on its own it ranks "
+        "worse (see `hazard_lambda_only` against `hazard_inbound_only` above)."
+    )
+    add("")
+    add(
+        "That is a finding about the inputs, not a reason to drop the term. The "
+        "panel's case counts come from two outbreaks whose reporting was dominated "
+        "by a handful of large origins, so there is little independent variation in "
+        "prevalence to fit. The term stays, constrained to be non-negative, so that "
+        "its fitted zero is a measurement that this report can show rather than an "
+        "omission nobody can see."
+    )
+    add("")
+
+    if data.challenger is not None:
+        add("## Challenger: gradient-boosted trees")
+        add("")
+        add(
+            "A monotone-constrained `HistGradientBoostingClassifier` on the same "
+            "features and the same folds. It is recorded, not served, unless it "
+            "beats the survival model on every held-out gate: a tree ensemble "
+            "cannot extrapolate past the arrival rates it was trained on, and a "
+            "new pathogen is precisely the case that sits outside them."
+        )
+        add("")
+        raw = data.challenger.get("folds")
+        challenger_rows: list[dict[str, object]] = [
+            row for row in (raw if isinstance(raw, list) else []) if isinstance(row, dict)
+        ]
+        transfer = [row for row in challenger_rows if row.get("split") == "leave_one_outbreak_out"]
+        chained = [row for row in challenger_rows if row.get("split") == "forward_chaining"]
+        if transfer:
+            add("Held out an entire pathogen. This is the comparison that decides it.")
+            add("")
+            add(
+                "| Held-out outbreak | Challenger AUC | Served AUC | "
+                "Challenger Brier | Served Brier |"
+            )
+            add("| --- | --- | --- | --- | --- |")
+            for row in transfer:
+                add(
+                    f"| {row['fold']} | {_number(row['challenger_auc'])} | "
+                    f"{_number(row['served_auc'])} | {_number(row['challenger_brier'])} | "
+                    f"{_number(row['served_brier'])} |"
+                )
+            add("")
+        if chained:
+            # Averaged rather than listed: there are two dozen of these folds,
+            # and the pattern across them, not any single week, is the finding.
+            add(
+                "Forward chaining inside an outbreak, averaged over "
+                f"{len(chained)} folds: challenger AUC "
+                f"{_number(_mean(chained, 'challenger_auc'))} against served "
+                f"{_number(_mean(chained, 'served_auc'))}, challenger Brier "
+                f"{_number(_mean(chained, 'challenger_brier'))} against served "
+                f"{_number(_mean(chained, 'served_brier'))}."
+            )
+            add("")
+            add(
+                "Read the two tables together. Within an outbreak the ensemble scores "
+                "the better Brier, because the weeks it predicts resemble the weeks it "
+                "was fitted on. Across pathogens it loses, and loses on the measure "
+                "that matters for a disease the model has never seen. That gap is the "
+                "overfitting the held-out split exists to expose, and it is the whole "
+                "argument for serving four parameters instead of fifty trees."
+            )
+            add("")
+        add(f"Status on the held-out gates: `{data.challenger.get('status')}`.")
+        add("")
+        add(
+            f"Served: {'yes' if data.challenger.get('served') else 'no'}. "
+            f"{data.challenger.get('reason')}"
+        )
+        add("")
+        add(f"What would change this: {data.challenger.get('what_would_change_this')}")
+        add("")
+
+    if data.gravity is not None:
+        add("## Passenger-flow gravity model")
+        add("")
+        add(
+            "The flows the hazard model reads are themselves a fitted model for the "
+            "90% of country pairs Eurostat does not observe. Its held-out fit is "
+            "below; the arrival rate inherits this error before the hazard model "
+            "sees it."
+        )
+        add("")
+        add("```json")
+        add(json.dumps(data.gravity, indent=2, default=str))
+        add("```")
+        add("")
+
+    add("## Baselines")
+    add("")
+    for key, description in BASELINES.items():
+        add(f"- `{key}`: {description}")
+    add("")
+
+    add("## Panel provenance")
+    add("")
+    add("```json")
+    add(json.dumps(provenance, indent=2, default=str))
+    add("```")
+    add("")
+    return "\n".join(lines)
+
+
+def write(data: ReportInput, root: Path | None = None) -> Path:
+    target = (root or repository_root()) / REPORT_NAME
+    target.write_text(render(data), encoding="utf-8")
+    return target

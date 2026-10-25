@@ -6,7 +6,7 @@ import gzip
 import json
 from pathlib import Path
 
-from epiroute.datasets.eurostat import load_observed_flows
+from endemica.datasets.eurostat import load_observed_flows
 
 
 def _payload(pairs: dict[str, float]) -> dict[str, object]:

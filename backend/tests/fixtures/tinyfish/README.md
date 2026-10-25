@@ -6,8 +6,8 @@ so the ingestion tests are deterministic and do not spend Agent credits
 
 | File | Endpoint | Notes |
 |---|---|---|
-| `fetch_don622_response.json` | `POST https://api.fetch.tinyfish.ai` | WHO DON 2026-DON622 as markdown. `published_date` came back `null`, which is why EpiRoute takes the publication date from the WHO API instead. |
-| `agent_run_don622_completed.json` | `GET https://agent.tinyfish.ai/v1/runs/{id}` | A `COMPLETED` run over the same page, 8 steps. The per-step trace was removed; nothing in EpiRoute reads it. |
+| `fetch_don622_response.json` | `POST https://api.fetch.tinyfish.ai` | WHO DON 2026-DON622 as markdown. `published_date` came back `null`, which is why Endemica takes the publication date from the WHO API instead. |
+| `agent_run_don622_completed.json` | `GET https://agent.tinyfish.ai/v1/runs/{id}` | A `COMPLETED` run over the same page, 8 steps. The per-step trace was removed; nothing in Endemica reads it. |
 | `search_who_response.json` | `GET https://api.search.tinyfish.ai` | Discovery results restricted to `who.int`. |
 
 ## Why the Agent fixture matters

@@ -10,8 +10,8 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from epiroute.core.errors import ModelInputError
-from epiroute.epidemiology.prevalence import (
+from endemica.core.errors import ModelInputError
+from endemica.epidemiology.prevalence import (
     DEFAULT_UNDERREPORTING,
     MAX_PLAUSIBLE_PREVALENCE,
     PrevalenceEstimate,

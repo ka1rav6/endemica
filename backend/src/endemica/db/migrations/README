@@ -1,0 +1,11 @@
+Alembic migration environment for Endemica.
+
+Use the justfile rather than invoking alembic directly:
+
+    just db-migrate                  # upgrade to head
+    just db-revision "add x table"   # autogenerate from model changes
+    just db-downgrade                # roll back one revision
+    just db-reset                    # destructive: base then head
+
+The database URL is read from Endemica's settings in env.py, so alembic.ini
+contains no credentials.

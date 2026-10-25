@@ -5,8 +5,8 @@ from typing import Any
 
 import pytest
 
-from epiroute.ingestion.grounding import ground_record
-from epiroute.ingestion.parser import (
+from endemica.ingestion.grounding import ground_record
+from endemica.ingestion.parser import (
     find_country_in_sentence,
     find_outbreak_start,
     parse_report,

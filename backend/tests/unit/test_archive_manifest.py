@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from epiroute.ingestion import manifest as manifest_module
+from endemica.ingestion import manifest as manifest_module
 
 
 def item(name: str, summary: str = "text", title: str = "Cholera") -> dict[str, Any]:

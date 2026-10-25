@@ -227,7 +227,7 @@
         "type": "object"
       },
       "Assumption": {
-        "description": "One assumption behind a published value, shown in the UI next to it.\n\nEvery model response carries the full list, so a user can see which numbers\nare inputs they chose and which are defaults EpiRoute supplied.",
+        "description": "One assumption behind a published value, shown in the UI next to it.\n\nEvery model response carries the full list, so a user can see which numbers\nare inputs they chose and which are defaults Endemica supplied.",
         "properties": {
           "key": {
             "description": "Stable machine name, e.g. 'alpha'.",
@@ -675,7 +675,7 @@
         "type": "object"
       },
       "CountryProfileResponse": {
-        "description": "Everything EpiRoute holds about one country's outbreak record.",
+        "description": "Everything Endemica holds about one country's outbreak record.",
         "properties": {
           "active_disease_count": {
             "title": "Active Disease Count",
@@ -2644,7 +2644,7 @@
             "title": "Published At"
           },
           "retrieved_at": {
-            "description": "When EpiRoute retrieved the document (UTC).",
+            "description": "When Endemica retrieved the document (UTC).",
             "format": "date-time",
             "title": "Retrieved At",
             "type": "string"
@@ -3225,8 +3225,8 @@
     }
   },
   "info": {
-    "description": "\nEpiRoute connects public-health outbreak reports to the global air-travel\nnetwork and publishes three *separate* quantities for a destination:\n\n1. **Local presence** \u2014 is there evidence the pathogen is already there?\n2. **Importation risk** \u2014 probability that at least one infected traveller\n   arrives within a time horizon.\n3. **Local establishment risk** \u2014 probability that an introduction leads to\n   sustained local transmission.\n\nEvery numeric field carries a `value_type` of `observed`, `estimated`,\n`modelled`, `scenario` or `unknown`. A value that cannot be computed is\nreturned as `null` with an `unavailable_reason` \u2014 never as `0`.\n\nFor situational awareness and education only. Not a diagnostic tool, not an\nofficial forecast, and not a substitute for WHO or national travel guidance.\n",
-    "title": "EpiRoute API",
+    "description": "\nEndemica connects public-health outbreak reports to the global air-travel\nnetwork and publishes three *separate* quantities for a destination:\n\n1. **Local presence** \u2014 is there evidence the pathogen is already there?\n2. **Importation risk** \u2014 probability that at least one infected traveller\n   arrives within a time horizon.\n3. **Local establishment risk** \u2014 probability that an introduction leads to\n   sustained local transmission.\n\nEvery numeric field carries a `value_type` of `observed`, `estimated`,\n`modelled`, `scenario` or `unknown`. A value that cannot be computed is\nreturned as `null` with an `unavailable_reason` \u2014 never as `0`.\n\nFor situational awareness and education only. Not a diagnostic tool, not an\nofficial forecast, and not a substitute for WHO or national travel guidance.\n",
+    "title": "Endemica API",
     "version": "0.1.0"
   },
   "openapi": "3.1.0",

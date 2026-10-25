@@ -9,17 +9,17 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from epiroute.core.config import Settings, get_settings
-from epiroute.db.models import (
+from endemica.core.config import Settings, get_settings
+from endemica.db.models import (
     Country,
     CountryFlow,
     IngestionRun,
     OutbreakObservation,
     OutbreakReport,
 )
-from epiroute.db.session import get_db
-from epiroute.main import create_app
-from epiroute.schemas.common import ExtractionMethod, ExtractionStatus, ValueType
+from endemica.db.session import get_db
+from endemica.main import create_app
+from endemica.schemas.common import ExtractionMethod, ExtractionStatus, ValueType
 
 pytestmark = pytest.mark.integration
 

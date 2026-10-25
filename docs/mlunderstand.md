@@ -1,6 +1,6 @@
 # What is actually modelled, and the mathematics of it
 
-EpiRoute fits three statistical models and evaluates a fourth as a challenger. None of them is a neural network. Everything else on screen is closed-form epidemiology evaluated per request, not a trained model.
+Endemica fits three statistical models and evaluates a fourth as a challenger. None of them is a neural network. Everything else on screen is closed-form epidemiology evaluated per request, not a trained model.
 
 | Model | What it answers | Served to the website |
 | --- | --- | --- |
@@ -106,7 +106,7 @@ The prevalence *composition* of λ carries no signal about which country reports
 
 The ablation `hazard_without_lambda` removes it entirely and **reproduces the served model to every printed digit on every fold**. That is the proof, not the suspicion.
 
-The term is kept anyway, constrained to be non-negative, so that its measured zero appears as a row in `MODEL_EVALUATION.md` rather than as an omission nobody can see. A reader who wants to know whether EpiRoute's case-count pipeline improves on raw air traffic gets an answer: on this evidence, for this question, it does not.
+The term is kept anyway, constrained to be non-negative, so that its measured zero appears as a row in `MODEL_EVALUATION.md` rather than as an omission nobody can see. A reader who wants to know whether Endemica's case-count pipeline improves on raw air traffic gets an answer: on this evidence, for this question, it does not.
 
 That is a statement about *this panel and this question*, not about prevalence in general. Prevalence is doing real work in the importation and establishment probabilities on the country panel, which are different questions with different evidence.
 
@@ -309,7 +309,7 @@ Held-out metrics are returned by `GET /api/v1/model/gravity` and printed in `MOD
 
 ## 4. The per-request epidemiology
 
-These are solved on every risk request from `backend/src/epiroute/epidemiology/`. They are not loaded from `model_card.json` and nothing about them is fitted.
+These are solved on every risk request from `backend/src/endemica/epidemiology/`. They are not loaded from `model_card.json` and nothing about them is fitted.
 
 ### Prevalence from a cumulative count
 

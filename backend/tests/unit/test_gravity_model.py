@@ -5,9 +5,9 @@ import math
 import numpy as np
 import pytest
 
-from epiroute.core.errors import DataUnavailableError
-from epiroute.datasets.geo import great_circle_km
-from epiroute.datasets.gravity import (
+from endemica.core.errors import DataUnavailableError
+from endemica.datasets.geo import great_circle_km
+from endemica.datasets.gravity import (
     FEATURE_NAMES,
     MAX_UNCERTAINTY_FACTOR,
     MIN_TRAINING_ROWS,

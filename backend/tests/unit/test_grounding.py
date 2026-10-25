@@ -16,7 +16,7 @@ from typing import Any
 
 import pytest
 
-from epiroute.ingestion.grounding import (
+from endemica.ingestion.grounding import (
     LABEL_WINDOW,
     Verdict,
     check_evidence_grounded,

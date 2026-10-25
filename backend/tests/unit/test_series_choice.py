@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from epiroute.repositories.outbreaks import CumulativePoint, choose_single_series
+from endemica.repositories.outbreaks import CumulativePoint, choose_single_series
 
 
 def _point(day: int, cases: int, source: str, disease: str) -> CumulativePoint:

@@ -6,9 +6,9 @@ import httpx
 import pytest
 import respx
 
-from epiroute.core.config import Settings
-from epiroute.core.errors import ExternalServiceError
-from epiroute.tinyfish.client import (
+from endemica.core.config import Settings
+from endemica.core.errors import ExternalServiceError
+from endemica.tinyfish.client import (
     MAX_FETCH_URLS,
     TinyFishAuthError,
     TinyFishClient,
@@ -16,7 +16,7 @@ from epiroute.tinyfish.client import (
     TinyFishNotConfiguredError,
     build_client_or_none,
 )
-from epiroute.tinyfish.schemas import OUTPUT_SCHEMA
+from endemica.tinyfish.schemas import OUTPUT_SCHEMA
 
 FETCH_URL = "https://api.fetch.tinyfish.ai"
 AGENT_URL = "https://agent.tinyfish.ai"
@@ -26,7 +26,7 @@ SEARCH_URL = "https://api.search.tinyfish.ai"
 @pytest.fixture
 def client(monkeypatch: pytest.MonkeyPatch) -> TinyFishClient:
     monkeypatch.setenv("TINYFISH_API_KEY", "test-key-value")
-    monkeypatch.setenv("EPIROUTE_HTTP_MAX_RETRIES", "0")
+    monkeypatch.setenv("ENDEMICA_HTTP_MAX_RETRIES", "0")
     return TinyFishClient(Settings())
 
 

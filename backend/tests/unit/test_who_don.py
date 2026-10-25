@@ -5,9 +5,9 @@ from typing import Any
 
 import pytest
 
-from epiroute.core.config import Settings
-from epiroute.ingestion.html_text import html_to_text, join_sections, normalise_whitespace
-from epiroute.ingestion.who_don import disease_label_from_title, parse_don_item
+from endemica.core.config import Settings
+from endemica.ingestion.html_text import html_to_text, join_sections, normalise_whitespace
+from endemica.ingestion.who_don import disease_label_from_title, parse_don_item
 
 NOW = datetime(2026, 10, 24, tzinfo=UTC)
 

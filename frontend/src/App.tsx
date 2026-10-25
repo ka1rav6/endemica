@@ -33,7 +33,7 @@ import {
   getRuns,
   getSources,
   triggerIngest,
-} from '@/services/epiroute';
+} from '@/services/endemica';
 
 type Tab = 'country' | 'spread' | 'risk' | 'compare' | 'assumptions' | 'reports' | 'sources';
 
@@ -50,10 +50,10 @@ const TABS: { id: Tab; label: string }[] = [
 const MAX_DATA_AGE_DAYS = 7;
 const MAX_CORRIDORS = 60;
 const ACTIVE_WINDOW_DAYS = 90;
-const RAIL_KEY = 'epiroute.railCollapsed';
-const PANEL_KEY = 'epiroute.panelCollapsed';
-const RAIL_WIDTH_KEY = 'epiroute.railWidth';
-const PANEL_WIDTH_KEY = 'epiroute.panelWidth';
+const RAIL_KEY = 'endemica.railCollapsed';
+const PANEL_KEY = 'endemica.panelCollapsed';
+const RAIL_WIDTH_KEY = 'endemica.railWidth';
+const PANEL_WIDTH_KEY = 'endemica.panelWidth';
 
 // Narrow enough that a disease name still fits, wide enough that the map keeps
 // most of the window at 1280px.

@@ -1,7 +1,7 @@
 import psycopg
 
 conn = psycopg.connect(
-    "postgresql://epiroute:epiroute@localhost:55433/epiroute", connect_timeout=4
+    "postgresql://endemica:endemica@localhost:55433/endemica", connect_timeout=4
 )
 cur = conn.cursor()
 for table in ("countries", "outbreak_reports", "outbreak_observations", "country_flows"):

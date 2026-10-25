@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from epiroute.core.errors import DataValidationError
-from epiroute.datasets.iso import (
+from endemica.core.errors import DataValidationError
+from endemica.datasets.iso import (
     country_name,
     is_known_iso3,
     resolve,

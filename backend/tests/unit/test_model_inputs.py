@@ -5,11 +5,11 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from epiroute.db.models import OutbreakObservation
-from epiroute.ingestion.validate import validate_location
-from epiroute.schemas.common import ExtractionStatus, ValueType
-from epiroute.services.outbreaks import _usable_for_models
-from epiroute.tinyfish.schemas import ExtractedLocation
+from endemica.db.models import OutbreakObservation
+from endemica.ingestion.validate import validate_location
+from endemica.schemas.common import ExtractionStatus, ValueType
+from endemica.services.outbreaks import _usable_for_models
+from endemica.tinyfish.schemas import ExtractedLocation
 
 SOURCE = "Ituri remains the epicentre, with 7040 cumulative confirmed cases and 3271 deaths."
 PUBLISHED = datetime(2026, 10, 23, tzinfo=UTC)

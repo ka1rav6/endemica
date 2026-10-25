@@ -25,7 +25,7 @@ export const VALUE_TYPE_DESCRIPTION: Record<ValueType, string> = {
   observed: 'Reported directly by an identified source.',
   estimated: 'Derived from observations by a documented procedure that adds assumptions.',
   modelled: 'Produced by an explicit mathematical model from other inputs.',
-  scenario: 'Produced under assumptions you or EpiRoute chose, not a measurement.',
+  scenario: 'Produced under assumptions you or Endemica chose, not a measurement.',
   unknown: 'The inputs were insufficient, so no value is published.',
 };
 

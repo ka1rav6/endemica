@@ -14,7 +14,7 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from epiroute.db.models import (
+from endemica.db.models import (
     Country,
     CountryFlow,
     GravityModelFit,
@@ -23,7 +23,7 @@ from epiroute.db.models import (
     OutbreakReport,
     PolicyFlag,
 )
-from epiroute.schemas.common import ExtractionMethod, ExtractionStatus, ValueType
+from endemica.schemas.common import ExtractionMethod, ExtractionStatus, ValueType
 
 pytestmark = pytest.mark.integration
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from epiroute.schemas.common import (
+from endemica.schemas.common import (
     BandedQuantity,
     Probability,
     Quantity,

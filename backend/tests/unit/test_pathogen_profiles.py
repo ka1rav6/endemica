@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from epiroute.core.errors import ModelInputError
-from epiroute.epidemiology.establishment import solve_establishment
-from epiroute.epidemiology.profiles import (
+from endemica.core.errors import ModelInputError
+from endemica.epidemiology.establishment import solve_establishment
+from endemica.epidemiology.profiles import (
     DEFAULT_PROFILE_KEY,
     PROFILES,
     Confidence,
@@ -57,7 +57,7 @@ class TestRegistryIntegrity:
 
 class TestHonestyGuarantees:
     def test_uncited_parameters_are_labelled_as_project_assumptions(self) -> None:
-        """Every alpha is EpiRoute's assumption; none may claim a citation."""
+        """Every alpha is Endemica's assumption; none may claim a citation."""
         for profile in PROFILES.values():
             assert profile.alpha.basis is ParameterBasis.PROJECT_ASSUMPTION, profile.key
             assert profile.alpha.note, f"{profile.key} alpha has no explanation"

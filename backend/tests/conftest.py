@@ -33,17 +33,17 @@ def _isolated_settings(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     real TinyFish key) cannot change test behaviour, and the settings cache is
     cleared around each test.
     """
-    from epiroute.core.config import Settings, get_settings
+    from endemica.core.config import Settings, get_settings
 
     for key in list(os.environ):
-        if key.startswith(("EPIROUTE_", "POSTGRES_", "TINYFISH_")):
+        if key.startswith(("ENDEMICA_", "POSTGRES_", "TINYFISH_")):
             monkeypatch.delenv(key, raising=False)
 
     # `model_config` is a plain dict; setitem (not setattr) is the way to
     # neutralise the .env file for the duration of the test.
     monkeypatch.setitem(Settings.model_config, "env_file", None)
-    monkeypatch.setenv("EPIROUTE_ENV", "test")
-    monkeypatch.setenv("EPIROUTE_LOG_LEVEL", "WARNING")
+    monkeypatch.setenv("ENDEMICA_ENV", "test")
+    monkeypatch.setenv("ENDEMICA_LOG_LEVEL", "WARNING")
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()

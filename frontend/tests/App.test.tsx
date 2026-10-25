@@ -11,7 +11,7 @@ vi.mock('@/features/WorldMap', () => ({
 
 const risk = vi.hoisted(() => ({ current: null as unknown }));
 
-vi.mock('@/services/epiroute', () => ({
+vi.mock('@/services/endemica', () => ({
   getHealth: vi.fn(() => Promise.resolve(fixturesRef.health)),
   getCountries: vi.fn(() => Promise.resolve({ total: 2, items: fixturesRef.countries })),
   getDiseaseHistory: vi.fn(() => Promise.resolve(fixturesRef.diseaseHistory)),
@@ -56,7 +56,7 @@ vi.mock('@/services/epiroute', () => ({
       residual_sigma_log10: 0.344,
       uncertainty_factor: 4.9,
       notes: null,
-      caveat: 'These metrics say nothing about how well EpiRoute predicts outbreaks.',
+      caveat: 'These metrics say nothing about how well Endemica predicts outbreaks.',
     }),
   ),
   getRuns: vi.fn(() => Promise.resolve([])),
@@ -258,7 +258,7 @@ describe('App', () => {
       expect(screen.getByText(/Passenger-flow model/)).toBeInTheDocument();
     });
     expect(
-      screen.getByText(/say nothing about how well EpiRoute predicts outbreaks/),
+      screen.getByText(/say nothing about how well Endemica predicts outbreaks/),
     ).toBeInTheDocument();
   });
 
@@ -311,13 +311,13 @@ describe('App', () => {
     });
     await userEvent.click(screen.getByRole('button', { name: 'Hide diseases sidebar' }));
     expect(screen.queryByRole('searchbox', { name: 'Search diseases' })).not.toBeInTheDocument();
-    expect(sessionStorage.getItem('epiroute.railCollapsed')).toBe('1');
+    expect(sessionStorage.getItem('endemica.railCollapsed')).toBe('1');
     await userEvent.click(screen.getByRole('button', { name: 'Show diseases sidebar' }));
     expect(screen.getByRole('searchbox', { name: 'Search diseases' })).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: 'Hide details sidebar' }));
     expect(screen.queryByRole('tab', { name: 'Risk' })).not.toBeInTheDocument();
-    expect(sessionStorage.getItem('epiroute.panelCollapsed')).toBe('1');
+    expect(sessionStorage.getItem('endemica.panelCollapsed')).toBe('1');
     await userEvent.click(screen.getByRole('button', { name: 'Show details sidebar' }));
     expect(screen.getByRole('tab', { name: 'Risk' })).toBeInTheDocument();
   });
@@ -487,7 +487,7 @@ describe('The all-active view', () => {
   });
 
   it('lands on the combined active view and asks the model for it', async () => {
-    const { getRisk } = await import('@/services/epiroute');
+    const { getRisk } = await import('@/services/endemica');
     render(<App />);
     await waitFor(async () => {
       expect(await activeFilter()).toHaveAttribute('aria-pressed', 'true');
@@ -506,7 +506,7 @@ describe('The all-active view', () => {
   });
 
   it('returns to a single disease when one is picked', async () => {
-    const { getRisk } = await import('@/services/epiroute');
+    const { getRisk } = await import('@/services/endemica');
     render(<App />);
     const rail = await waitFor(() => screen.getByRole('complementary', { name: 'Diseases' }));
     await userEvent.click(within(rail).getByText('Test respiratory disease'));

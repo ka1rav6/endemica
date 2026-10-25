@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from epiroute.repositories.outbreaks import SeriesEndpoint, total_counts
+from endemica.repositories.outbreaks import SeriesEndpoint, total_counts
 
 
 def endpoint(

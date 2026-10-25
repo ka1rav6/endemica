@@ -11,9 +11,9 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.exc import OperationalError
 
-from epiroute.core.config import Settings
-from epiroute.db.session import get_db
-from epiroute.main import create_app
+from endemica.core.config import Settings
+from endemica.db.session import get_db
+from endemica.main import create_app
 
 
 class _StubSession:
@@ -36,7 +36,7 @@ def _client(*, db_fails: bool = False, tinyfish_key: str | None = None) -> Itera
     app = create_app(settings)
     app.dependency_overrides[get_db] = lambda: _StubSession(fail=db_fails)
     # get_settings is used via Depends inside the route, so override it too.
-    from epiroute.core.config import get_settings
+    from endemica.core.config import get_settings
 
     app.dependency_overrides[get_settings] = lambda: settings
     with TestClient(app) as client:

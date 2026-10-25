@@ -6,13 +6,13 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from epiroute.calibration.evaluate import (
+from endemica.calibration.evaluate import (
     forward_chaining,
     leave_one_outbreak_out,
     permutation_auc,
     uncalibrated,
 )
-from epiroute.calibration.features import (
+from endemica.calibration.features import (
     FEATURE_NAMES,
     HORIZON_DAYS,
     FeatureRow,
@@ -20,9 +20,9 @@ from epiroute.calibration.features import (
     design_matrix,
     monotone_columns,
 )
-from epiroute.calibration.gates import GateResult, status_from_gates
-from epiroute.calibration.hazard import cloglog_probability, fit_cloglog
-from epiroute.calibration.metrics import calibration_line, top_k_precision
+from endemica.calibration.gates import GateResult, status_from_gates
+from endemica.calibration.hazard import cloglog_probability, fit_cloglog
+from endemica.calibration.metrics import calibration_line, top_k_precision
 
 
 def panel(rows: int = 400, seed: int = 0) -> pd.DataFrame:
@@ -158,7 +158,7 @@ def test_the_fit_is_the_same_on_a_second_run() -> None:
 
 
 def test_shuffling_the_training_labels_destroys_the_held_out_ranking() -> None:
-    from epiroute.calibration.evaluate import CANDIDATES
+    from endemica.calibration.evaluate import CANDIDATES
 
     served = next(candidate for candidate in CANDIDATES if candidate.name == "hazard")
     score = permutation_auc(served, panel(600, seed=7))

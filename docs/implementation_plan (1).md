@@ -1,4 +1,4 @@
-# EpiRoute — Implementation & Preparation Plan
+# Endemica — Implementation & Preparation Plan
 
 HackIIITD 2026 (Esya '26, IIIT Delhi) · prepared 15 Oct 2026
 
@@ -110,7 +110,7 @@ Non-goals: diagnosis, official forecasts, individual medical or travel advice.
 
 All calls are **server-side**. Key in `TINYFISH_API_KEY` env var, loaded via `.env` that is in `.gitignore`. Never log request headers.
 
-| Product | Endpoint (from docs) | Use in EpiRoute | Limits / cost (docs & pricing page) |
+| Product | Endpoint (from docs) | Use in Endemica | Limits / cost (docs & pricing page) |
 |---|---|---|---|
 | Search | `GET https://api.search.tinyfish.ai` params `query`, `include_domains`, `recency_minutes`, `domain_type` | Discover new reports on who.int, ecdc.europa.eu, paho.org, africacdc.org | Free; 30 req/min. Pricing page says 500/hour; reference page says 12,000/day — treat 500/hour as the binding limit |
 | Fetch | `POST https://api.fetch.tinyfish.ai` body `urls` (≤10), `format` (`markdown`/`json`/`html`), `include_etag_and_last_modified`, `ttl` | Report page → clean text + `published_date`; text is also the grounding reference | Free up to 1,000 successful URLs/day; 150 URLs/min; client timeout ≥150 s |
@@ -231,7 +231,7 @@ Pathogen parameter profiles (documented assumptions, each with a citation field 
 ## 6. Repository layout
 
 ```
-epiroute/
+endemica/
   README.md                 # run commands, env vars, data provenance
   .env.example              # TINYFISH_API_KEY=   (no real values)
   .gitignore                # .env, data/raw, data/cache
@@ -378,7 +378,7 @@ Usage caps vary by plan and load; we have not verified exact quotas, so plan as 
 **Shared source of truth:** `docs/SPEC.md` (≤ 2 pages: goals, API contract, schemas, colour/value-type rules). Every prompt starts by pasting SPEC.md's relevant section, not the whole repo.
 
 **Master spec prompt (start of event):**
-> You are helping a 4-person team build EpiRoute in 24 hours. Read this SPEC. Rules: Python 3.11 FastAPI backend, React+TS+Vite frontend, MapLibre + deck.gl. Every numeric output has value_type ∈ {observed, estimated, modelled, scenario}; missing inputs return null with a reason, never 0. TinyFish calls are server-side only, key from env. Reply with code for ONE file at a time plus its tests. Ask before inventing an API field. SPEC: …
+> You are helping a 4-person team build Endemica in 24 hours. Read this SPEC. Rules: Python 3.11 FastAPI backend, React+TS+Vite frontend, MapLibre + deck.gl. Every numeric output has value_type ∈ {observed, estimated, modelled, scenario}; missing inputs return null with a reason, never 0. TinyFish calls are server-side only, key from env. Reply with code for ONE file at a time plus its tests. Ask before inventing an API field. SPEC: …
 
 **Repo inspection prompt:**
 > Here is `tree -L 3` and the contents of app/main.py and app/routers/risk.py. List mismatches with the SPEC contract and the smallest change to fix each. Do not rewrite files.

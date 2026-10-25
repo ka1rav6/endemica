@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from epiroute.epidemiology.diseases import OTHER_KEY, classify, extract_label, resolve
+from endemica.epidemiology.diseases import OTHER_KEY, classify, extract_label, resolve
 
 
 class TestLabelExtraction:

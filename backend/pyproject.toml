@@ -1,7 +1,7 @@
 [project]
-name = "epiroute"
+name = "endemica"
 version = "0.1.0"
-description = "EpiRoute — outbreak intelligence over the air-travel network"
+description = "Endemica — outbreak intelligence over the air-travel network"
 # README and LICENSE live at the repository root, outside this package directory,
 # so they are not referenced here; see ../README.md and ../LICENSE.
 # 3.12 is the floor because numpy 2.x ships type stubs that use
@@ -43,14 +43,14 @@ dev = [
 ]
 
 [project.scripts]
-epiroute = "epiroute.cli:main"
+endemica = "endemica.cli:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/epiroute"]
+packages = ["src/endemica"]
 
 # ---------------------------------------------------------------------------
 # Ruff — linting and formatting
@@ -88,7 +88,7 @@ ignore = [
 # Tests document themselves through their names; full docstring rules and
 # annotation rules would add noise without improving clarity.
 "tests/**" = ["ANN", "ARG", "E501"]
-"src/epiroute/db/migrations/**" = ["ANN", "E501", "I"]
+"src/endemica/db/migrations/**" = ["ANN", "E501", "I"]
 
 # ---------------------------------------------------------------------------
 # mypy — static type checking
@@ -114,13 +114,13 @@ disallow_untyped_calls = false
 # ---------------------------------------------------------------------------
 [tool.pytest.ini_options]
 minversion = "8.0"
-testpaths = ["tests", "src/epiroute/epidemiology"]
+testpaths = ["tests", "src/endemica/epidemiology"]
 addopts = "-ra --strict-markers --strict-config --doctest-modules --doctest-glob=''"
 markers = [
     "integration: requires a live PostgreSQL database (see `just test-integration`)",
     "network: requires outbound internet access; excluded from the default run",
 ]
-filterwarnings = ["error::DeprecationWarning:epiroute.*"]
+filterwarnings = ["error::DeprecationWarning:endemica.*"]
 
 # Doctests in the epidemiology package are part of the test suite: the worked
 # examples in those docstrings are the documentation AGENTS.md section 5.1

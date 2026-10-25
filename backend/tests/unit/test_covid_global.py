@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
-from epiroute.ingestion import covid_global
+from endemica.ingestion import covid_global
 
 HEADER = (
     "Date_reported,Country_code,Country,WHO_region,"

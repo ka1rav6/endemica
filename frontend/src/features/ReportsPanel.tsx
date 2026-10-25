@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Observation, OutbreakReport, OutbreakReportDetail } from '@/types/api';
-import { getOutbreak } from '@/services/epiroute';
+import { getOutbreak } from '@/services/endemica';
 import { formatCount, formatDate, relativeAge } from '@/lib/format';
 import { ValueTypeBadge } from '@/components/ValueTypeBadge';
 import { ErrorNotice } from '@/components/ErrorNotice';

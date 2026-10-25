@@ -7,13 +7,13 @@ from pathlib import Path
 
 import numpy as np
 
-from epiroute.calibration.gates import all_passed, evaluate_gates
-from epiroute.calibration.hazard import HazardCoefficients, fit_hazard, probability
-from epiroute.datasets.dot_t100 import agreement_rate, direct_flows, undirected_country_totals
-from epiroute.datasets.eurostat import ObservedFlow
-from epiroute.datasets.openflights import Airport
-from epiroute.datasets.worldbank import compare
-from epiroute.ingestion.corroborate import CountPoint, corroborate
+from endemica.calibration.gates import all_passed, evaluate_gates
+from endemica.calibration.hazard import HazardCoefficients, fit_hazard, probability
+from endemica.datasets.dot_t100 import agreement_rate, direct_flows, undirected_country_totals
+from endemica.datasets.eurostat import ObservedFlow
+from endemica.datasets.openflights import Airport
+from endemica.datasets.worldbank import compare
+from endemica.ingestion.corroborate import CountPoint, corroborate
 
 
 def test_a_higher_arrival_rate_raises_the_probability() -> None:

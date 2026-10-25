@@ -165,7 +165,7 @@ export function riskResponse(overrides: Partial<RiskResponse> = {}): RiskRespons
     pathogen: pathogens[0]!,
     horizon_days: 14,
     computed_at: new Date().toISOString(),
-    model_version: 'epiroute-0.1.0',
+    model_version: 'endemica-0.1.0',
     presence: {
       status: 'not_reported',
       value_type: 'observed',
@@ -297,7 +297,7 @@ export function riskResponse(overrides: Partial<RiskResponse> = {}): RiskRespons
         unit: null,
         value_type: 'scenario',
         source: 'Respiratory pathogen (default) profile default',
-        note: 'An EpiRoute assumption, not a published estimate.',
+        note: 'An Endemica assumption, not a published estimate.',
       },
     ],
     warnings: [

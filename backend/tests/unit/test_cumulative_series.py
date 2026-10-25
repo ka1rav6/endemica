@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from epiroute.repositories.outbreaks import CumulativePoint, _latest_episode, _running_max
+from endemica.repositories.outbreaks import CumulativePoint, _latest_episode, _running_max
 
 
 def _point(day: datetime, cases: int | None, deaths: int | None = None) -> CumulativePoint:

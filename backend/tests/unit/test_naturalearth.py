@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from epiroute.datasets.naturalearth import geometry_centroid
+from endemica.datasets.naturalearth import geometry_centroid
 
 
 def _square(lon: float, lat: float, size: float = 4.0) -> list[list[float]]:

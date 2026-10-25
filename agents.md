@@ -1,6 +1,6 @@
-# AGENTS.md — EpiRoute
+# AGENTS.md — Endemica
 
-> **Project:** EpiRoute — Outbreak Intelligence and Air-Travel Risk Mapping  
+> **Project:** Endemica — Outbreak Intelligence and Air-Travel Risk Mapping  
 > **Event:** HackIIITD 2026  
 > **Purpose:** Provide transparent, source-backed outbreak intelligence by combining public-health reports, air-travel networks, and epidemiological models.  
 > **Primary objective:** Build a reliable, demonstrable, well-documented MVP first, then expand it incrementally without compromising correctness.
@@ -36,7 +36,7 @@ When time is limited, reduce the scope of the implementation rather than lowerin
 
 ## 2.1 What We Are Building
 
-EpiRoute is an outbreak-intelligence application that connects public-health reports to the global air-travel network.
+Endemica is an outbreak-intelligence application that connects public-health reports to the global air-travel network.
 
 Users should be able to:
 
@@ -174,7 +174,7 @@ Organize the application into logical modules.
 The following is the target structure, not a requirement to create every directory immediately:
 
 ```text
-epiroute/
+endemica/
 ├── AGENTS.md
 ├── README.md
 ├── CONTRIBUTING.md
@@ -199,7 +199,7 @@ epiroute/
 ├── backend/
 │   ├── pyproject.toml
 │   ├── src/
-│   │   └── epiroute/
+│   │   └── endemica/
 │   │       ├── main.py
 │   │       ├── api/
 │   │       ├── core/
@@ -441,7 +441,7 @@ Documentation is mandatory for all meaningful functionality.
 
 The README must explain:
 
-- What EpiRoute does.
+- What Endemica does.
 - The problem it addresses.
 - Its primary features.
 - The high-level architecture.
@@ -1687,4 +1687,4 @@ These rules take precedence over convenience.
 9. Preserve existing user work.
 10. Prefer a reliable end-to-end MVP over an unfinished collection of advanced features.
 
-**The standard for EpiRoute is not simply that the application runs. The codebase must be understandable, reproducible, testable, scientifically transparent, and easy for another developer to continue working on.**
+**The standard for Endemica is not simply that the application runs. The codebase must be understandable, reproducible, testable, scientifically transparent, and easy for another developer to continue working on.**

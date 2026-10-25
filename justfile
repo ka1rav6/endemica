@@ -1,4 +1,4 @@
-# EpiRoute — the root justfile is the primary command interface.
+# Endemica — the root justfile is the primary command interface.
 #
 #   just                 list every recipe
 #   just doctor          check prerequisites and configuration
@@ -19,11 +19,11 @@ venv     := backend / ".venv"
 py       := venv / "bin" / "python"
 data     := root / "data"
 
-# `nvm`-managed Node is not on a non-interactive PATH. Setting EPIROUTE_NODE_BIN
+# `nvm`-managed Node is not on a non-interactive PATH. Setting ENDEMICA_NODE_BIN
 # in .env makes every frontend recipe work from a plain shell too. The default
 # is a non-existent directory rather than "", because an empty PATH element
 # means "the current directory".
-export PATH := env_var_or_default("EPIROUTE_NODE_BIN", "/nonexistent") + ":" + env_var("PATH")
+export PATH := env_var_or_default("ENDEMICA_NODE_BIN", "/nonexistent") + ":" + env_var("PATH")
 
 # ---------------------------------------------------------------------------
 # Discovery
@@ -94,7 +94,7 @@ deps-check:
 
 # Validate configuration: required settings present, optional ones reported.
 config-check:
-    "{{ py }}" -m epiroute.cli config-check
+    "{{ py }}" -m endemica.cli config-check
 
 # Check prerequisites, dependencies, database and data state.
 doctor:
@@ -115,9 +115,9 @@ doctor:
     chk "frontend deps"  bash -c '[[ -d "{{ frontend }}/node_modules" ]] && echo installed || { echo "missing — run: just setup-frontend"; exit 1; }'
     chk "data dir writable" bash -c 'touch "{{ data }}/.write-test" && rm -f "{{ data }}/.write-test" && echo "{{ data }}"'
     echo "Runtime"
-    chk "postgres reachable" bash -c '"{{ py }}" -m epiroute.cli db-status --quiet'
+    chk "postgres reachable" bash -c '"{{ py }}" -m endemica.cli db-status --quiet'
     echo "Configuration"
-    "{{ py }}" -m epiroute.cli config-check || fail=1
+    "{{ py }}" -m endemica.cli config-check || fail=1
     echo ""
     if [[ $fail -eq 0 ]]; then echo "doctor: all checks passed"; else echo "doctor: some checks failed (see ✗ above)"; exit 1; fi
 
@@ -153,7 +153,7 @@ db-down:
 
 # Show connectivity, applied migration revision and row counts.
 db-status:
-    "{{ py }}" -m epiroute.cli db-status
+    "{{ py }}" -m endemica.cli db-status
 
 # Apply all pending Alembic migrations.
 db-migrate:
@@ -179,7 +179,7 @@ db-reset:
 
 # Remove unreferenced ingestion runs older than the given number of days.
 db-vacuum days="90":
-    "{{ py }}" -m epiroute.cli db-vacuum --older-than-days {{ days }}
+    "{{ py }}" -m endemica.cli db-vacuum --older-than-days {{ days }}
 
 # Open a psql shell on the development database.
 db-shell:
@@ -198,7 +198,7 @@ dev:
 
 # Run the FastAPI backend with autoreload on http://localhost:8000
 dev-backend:
-    cd "{{ backend }}" && "{{ venv }}/bin/uvicorn" epiroute.main:app --reload --host 127.0.0.1 --port 8000
+    cd "{{ backend }}" && "{{ venv }}/bin/uvicorn" endemica.main:app --reload --host 127.0.0.1 --port 8000
 
 # Run the Vite dev server on http://localhost:5173
 dev-frontend:
@@ -213,7 +213,7 @@ start:
         echo "backend already running (pid $(cat "{{ root }}/logs/backend.pid"))"; exit 0
     fi
     cd "{{ backend }}"
-    nohup "{{ venv }}/bin/uvicorn" epiroute.main:app --host 127.0.0.1 --port 8000 \
+    nohup "{{ venv }}/bin/uvicorn" endemica.main:app --host 127.0.0.1 --port 8000 \
         >> "{{ root }}/logs/backend.log" 2>&1 &
     echo $! > "{{ root }}/logs/backend.pid"
     echo "✓ backend started (pid $(cat "{{ root }}/logs/backend.pid")) → logs/backend.log"
@@ -263,7 +263,7 @@ test-frontend *args:
 
 # Backend coverage report.
 coverage:
-    cd "{{ backend }}" && "{{ venv }}/bin/pytest" --cov=epiroute --cov-report=term-missing --cov-report=html
+    cd "{{ backend }}" && "{{ venv }}/bin/pytest" --cov=endemica --cov-report=term-missing --cov-report=html
     @echo "HTML report: backend/htmlcov/index.html"
 
 # ---------------------------------------------------------------------------
@@ -337,85 +337,85 @@ build-frontend:
 
 # Report which datasets are present, their age and their provenance.
 data-check:
-    "{{ py }}" -m epiroute.cli data-check
+    "{{ py }}" -m endemica.cli data-check
 
 # Download the reference datasets into data/raw (skips files already present).
 data-fetch *args:
-    "{{ py }}" -m epiroute.cli data-fetch {{ args }}
+    "{{ py }}" -m endemica.cli data-fetch {{ args }}
 
 # Re-download every reference dataset, replacing what is in data/raw.
 data-refresh:
-    "{{ py }}" -m epiroute.cli data-fetch --force
+    "{{ py }}" -m endemica.cli data-fetch --force
 
 # Build the processed tables (countries, flows, routes) from data/raw.
 data-build *args:
-    "{{ py }}" -m epiroute.cli data-build {{ args }}
+    "{{ py }}" -m endemica.cli data-build {{ args }}
 
 # Load the processed reference tables into PostgreSQL.
 data-load:
-    "{{ py }}" -m epiroute.cli data-load
+    "{{ py }}" -m endemica.cli data-load
 
 # Validate the processed datasets against their documented invariants.
 data-validate:
-    "{{ py }}" -m epiroute.cli data-validate
+    "{{ py }}" -m endemica.cli data-validate
 
 # Fit the passenger-flow gravity model and write its held-out evaluation.
 model-fit *args:
-    "{{ py }}" -m epiroute.cli model-fit {{ args }}
+    "{{ py }}" -m endemica.cli model-fit {{ args }}
 
 # Print the stored gravity-model evaluation report.
 model-report:
-    "{{ py }}" -m epiroute.cli model-report
+    "{{ py }}" -m endemica.cli model-report
 
 # Download historical first-report dates and write a 20-row audit.
 labels-build:
-    "{{ py }}" -m epiroute.cli labels-build
+    "{{ py }}" -m endemica.cli labels-build
 
 # Fit the next-country hazard, write the model card and MODEL_EVALUATION.md.
 train-model *args:
-    "{{ py }}" -m epiroute.cli train-model {{ args }}
+    "{{ py }}" -m endemica.cli train-model {{ args }}
 
 # Print the full model evaluation report.
 model-evaluation:
-    "{{ py }}" -m epiroute.cli model-report --evaluation
+    "{{ py }}" -m endemica.cli model-report --evaluation
 
 # Print the model card and exit non-zero when it is not validated.
 validate-model:
-    "{{ py }}" -m epiroute.cli validate-model
+    "{{ py }}" -m endemica.cli validate-model
 
 # Check processed passenger and population tables.
 qa-data:
-    "{{ py }}" -m epiroute.cli qa-data
+    "{{ py }}" -m endemica.cli qa-data
 
 # Run a WHO Disease Outbreak News ingestion pass.
 data-ingest *args:
-    "{{ py }}" -m epiroute.cli ingest {{ args }}
+    "{{ py }}" -m endemica.cli ingest {{ args }}
 
 # Download every page of the WHO Disease Outbreak News archive into data/raw.
 data-archive *args:
-    "{{ py }}" -m epiroute.cli data-archive {{ args }}
+    "{{ py }}" -m endemica.cli data-archive {{ args }}
 
 # Print a comparable summary of every grounded figure in this database.
 # Run it on two checkouts and diff the output to find where they disagree.
 data-fingerprint:
-    "{{ py }}" -m epiroute.cli data-fingerprint
+    "{{ py }}" -m endemica.cli data-fingerprint
 
 # Ingest the stored archive offline, so two checkouts end up with the same rows.
 ingest-archive *args:
-    "{{ py }}" -m epiroute.cli ingest-archive {{ args }}
+    "{{ py }}" -m endemica.cli ingest-archive {{ args }}
 
 # Load WHO's COVID-19 global data table. Disease Outbreak News stopped covering
 # COVID-19 in early 2020, so its counts come from WHO's dedicated data product.
 ingest-covid *args:
-    "{{ py }}" -m epiroute.cli ingest-covid {{ args }}
+    "{{ py }}" -m endemica.cli ingest-covid {{ args }}
 
 # Write an offline demonstration snapshot to data/snapshot.
 snapshot-build:
-    "{{ py }}" -m epiroute.cli snapshot-build
+    "{{ py }}" -m endemica.cli snapshot-build
 
 # Load a previously written snapshot into the database.
 snapshot-load:
-    "{{ py }}" -m epiroute.cli snapshot-load
+    "{{ py }}" -m endemica.cli snapshot-load
 
 # One command from an empty database to a demonstrable application.
 bootstrap: db-up db-migrate data-fetch data-build data-load model-fit data-ingest
@@ -428,12 +428,12 @@ bootstrap: db-up db-migrate data-fetch data-build data-load model-fit data-inges
 
 # Write the OpenAPI schema to docs/openapi.json
 api-docs:
-    "{{ py }}" -m epiroute.cli openapi --output "{{ root }}/docs/openapi.json"
+    "{{ py }}" -m endemica.cli openapi --output "{{ root }}/docs/openapi.json"
     @echo "✓ docs/openapi.json updated"
 
 # Smoke-check a running API: /health plus the main read endpoints.
 api-check base="http://127.0.0.1:8000":
-    "{{ py }}" -m epiroute.cli api-check --base-url {{ base }}
+    "{{ py }}" -m endemica.cli api-check --base-url {{ base }}
 
 # ---------------------------------------------------------------------------
 # Git helpers

@@ -1,6 +1,6 @@
 # How the risk numbers are calculated
 
-EpiRoute does not publish one "probability of infection." A selected country gets three separate answers. Each one uses a different input, and a missing input stays blank. It is never filled in with zero.
+Endemica does not publish one "probability of infection." A selected country gets three separate answers. Each one uses a different input, and a missing input stays blank. It is never filled in with zero.
 
 The numbers are for situational awareness. They are not a forecast, not a diagnosis, and not a substitute for WHO or national travel advice.
 

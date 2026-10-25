@@ -11,8 +11,8 @@ import math
 import networkx as nx
 import pytest
 
-from epiroute.core.errors import ModelInputError
-from epiroute.epidemiology.effective_distance import (
+from endemica.core.errors import ModelInputError
+from endemica.epidemiology.effective_distance import (
     build_effective_distance_graph,
     effective_distance,
     rank_origins_by_effective_distance,

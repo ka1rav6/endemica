@@ -17,8 +17,8 @@ import math
 
 import pytest
 
-from epiroute.core.errors import ModelInputError
-from epiroute.epidemiology.establishment import (
+from endemica.core.errors import ModelInputError
+from endemica.epidemiology.establishment import (
     days_to_establishment_threshold,
     probability_of_establishment_within,
     solve_establishment,
@@ -161,7 +161,7 @@ class TestEstablishmentOverHorizon:
 
     def test_establishment_never_exceeds_importation(self) -> None:
         """A chain cannot establish without an arrival, so P(est) <= P(import)."""
-        from epiroute.epidemiology.importation import probability_at_least_one_arrival
+        from endemica.epidemiology.importation import probability_at_least_one_arrival
 
         for rate in (0.001, 0.01, 0.1, 1.0, 10.0):
             for horizon in (1.0, 14.0, 90.0):
@@ -200,7 +200,7 @@ class TestEstablishmentThreshold:
 
     def test_establishment_threshold_is_never_earlier_than_import_threshold(self) -> None:
         """Establishment requires an arrival first, so its marker cannot lead."""
-        from epiroute.epidemiology.importation import days_to_probability_threshold
+        from endemica.epidemiology.importation import days_to_probability_threshold
 
         rate = 0.2
         import_day = days_to_probability_threshold(rate, 0.5)

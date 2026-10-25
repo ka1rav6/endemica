@@ -1,8 +1,12 @@
-# PostgreSQL for local development. EpiRoute's primary datastore is PostgreSQL;
+# PostgreSQL for local development. Endemica's primary datastore is PostgreSQL;
 # the container keeps setup to one command and avoids clashing with any
 # system-wide server (the host port is deliberately non-default).
 #
 # Start with `just db-up`, stop with `just db-down`.
+#
+# The container, volume, role and database are still called `epiroute`,
+# the project's former name: renaming them would strand the data already
+# in the volume. They are identifiers, not branding, so they stay.
 services:
   postgres:
     image: postgres:16-alpine

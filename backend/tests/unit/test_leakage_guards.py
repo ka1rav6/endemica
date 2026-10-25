@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from epiroute.calibration.leakage import (
+from endemica.calibration.leakage import (
     LeakageError,
     assert_inputs_not_after_forecast,
     assert_outbreaks_disjoint,

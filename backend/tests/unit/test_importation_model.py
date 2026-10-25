@@ -12,8 +12,8 @@ import math
 
 import pytest
 
-from epiroute.core.errors import ModelInputError
-from epiroute.epidemiology.importation import (
+from endemica.core.errors import ModelInputError
+from endemica.epidemiology.importation import (
     MAX_SIGMA,
     OriginContribution,
     arrival_rate_from_origin,

@@ -7,7 +7,7 @@ from collections.abc import Callable
 import pytest
 from pydantic import ValidationError
 
-from epiroute.core.config import Settings
+from endemica.core.config import Settings
 
 
 @pytest.fixture
@@ -15,7 +15,7 @@ def settings_from_env(monkeypatch: pytest.MonkeyPatch) -> Callable[..., Settings
     """Return a builder that constructs Settings from environment variables.
 
     Settings are read from the environment rather than passed as keyword
-    arguments, because the `EPIROUTE_` prefix only applies to environment
+    arguments, because the `ENDEMICA_` prefix only applies to environment
     lookups — this exercises the same path the application uses.
     """
 
@@ -40,7 +40,7 @@ def test_database_url_is_assembled_from_parts(settings_from_env: Callable[..., S
 
 def test_explicit_database_url_overrides_parts(settings_from_env: Callable[..., Settings]) -> None:
     s = settings_from_env(
-        EPIROUTE_DATABASE_URL="postgresql+psycopg://a:b@c:1/e",
+        ENDEMICA_DATABASE_URL="postgresql+psycopg://a:b@c:1/e",
         POSTGRES_HOST="ignored",
     )
     assert s.sqlalchemy_url == "postgresql+psycopg://a:b@c:1/e"
@@ -79,23 +79,23 @@ def test_production_rejects_the_default_database_password(
     settings_from_env: Callable[..., Settings],
 ) -> None:
     with pytest.raises(ValidationError, match="POSTGRES_PASSWORD"):
-        settings_from_env(EPIROUTE_ENV="production", POSTGRES_PASSWORD="epiroute")
+        settings_from_env(ENDEMICA_ENV="production", POSTGRES_PASSWORD="epiroute")
 
 
 def test_production_accepts_a_changed_password(settings_from_env: Callable[..., Settings]) -> None:
-    s = settings_from_env(EPIROUTE_ENV="production", POSTGRES_PASSWORD="changed")
+    s = settings_from_env(ENDEMICA_ENV="production", POSTGRES_PASSWORD="changed")
     assert s.docs_enabled is False
 
 
 def test_cors_origins_are_split_and_trimmed(settings_from_env: Callable[..., Settings]) -> None:
-    s = settings_from_env(EPIROUTE_CORS_ORIGINS="http://a ,http://b,")
+    s = settings_from_env(ENDEMICA_CORS_ORIGINS="http://a ,http://b,")
     assert s.cors_origin_list == ["http://a", "http://b"]
 
 
 def test_relative_data_dir_resolves_against_the_repository_root(
     settings_from_env: Callable[..., Settings],
 ) -> None:
-    s = settings_from_env(EPIROUTE_DATA_DIR="data")
+    s = settings_from_env(ENDEMICA_DATA_DIR="data")
     assert s.data_dir.is_absolute()
     assert s.raw_data_dir == s.data_dir / "raw"
     assert s.snapshot_data_dir == s.data_dir / "snapshot"
