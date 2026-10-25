@@ -85,7 +85,6 @@ Ranking gates decide whether the ordering may be served. Calibration gates decid
 | `calibration_slope` | 0.922 | yes | 0.5 to 1.5 on one outbreak |
 | `calibration_intercept` | 1.106 | no | absolute value at most 0.5 on one outbreak |
 | `top_20_precision` | 0.700 | yes | at least half of the twenty highest-ranked countries did report |
-| `top_20_recall` | 0.022 | yes | reported, not gated: twenty rows cannot recover a fold with hundreds of positives |
 | `arrival_order_spearman` | 0.007 | no | at least 0.5 |
 | `monotone_in_lambda` | 1.000 | yes | b1 is at least 0, so probability does not fall as lambda rises |
 
