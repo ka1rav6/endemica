@@ -83,25 +83,49 @@ class TestAcrossOutbreaks:
         assert latest is not None and previous is not None
         assert latest > previous
 
-    def test_a_year_long_gap_starts_a_new_outbreak(self) -> None:
-        # Counts keep rising, but the reports are two separate episodes.
+    def test_a_year_long_gap_starts_a_new_outbreak_when_the_count_fell(self) -> None:
+        # A total well below the running one is the evidence of a restart.
         series = _running_max(
             [
                 _point(START, 400),
-                _point(START + timedelta(days=800), 600),
+                _point(START + timedelta(days=800), 60),
             ]
         )
-        assert [p.cases_confirmed for p in series] == [400, 600]
-        assert series[-1].cases_confirmed == 600
+        assert [p.cases_confirmed for p in series] == [400, 60]
 
     def test_only_the_latest_episode_is_differenced(self) -> None:
+        episode = _latest_episode(
+            [
+                _point(START, 400),
+                _point(START + timedelta(days=800), 60),
+            ]
+        )
+        assert [point.cases_confirmed for point in episode] == [60]
+
+    def test_a_long_silence_alone_does_not_restart_a_rising_total(self) -> None:
+        # A source does not restate a running cumulative figure for a
+        # different outbreak, so a total that did not fall is the same
+        # accounting series however long the gap.
         episode = _latest_episode(
             [
                 _point(START, 400),
                 _point(START + timedelta(days=800), 600),
             ]
         )
-        assert [point.cases_confirmed for point in episode] == [600]
+        assert [point.cases_confirmed for point in episode] == [400, 600]
+
+    def test_a_bulletin_without_a_case_count_does_not_strand_the_series(self) -> None:
+        # WHO's MERS reporting does this: the October 2026 bulletin restated
+        # deaths but not cases, 521 days after the previous one. Cutting there
+        # left a series whose only point had no count at all.
+        episode = _latest_episode(
+            [
+                _point(START, 2618, 945),
+                _point(START + timedelta(days=60), 2627, 946),
+                _point(START + timedelta(days=581), None, 965),
+            ]
+        )
+        assert [point.cases_confirmed for point in episode] == [2618, 2627, None]
 
     def test_deaths_restart_with_their_outbreak(self) -> None:
         series = _running_max(

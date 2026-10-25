@@ -375,6 +375,7 @@ def prevalence_from_cumulative(
             published_at=point.published_at,
             cases_confirmed=point.cases_confirmed,
             outbreak_started_on=point.outbreak_started_on,
+            deaths=point.deaths,
         )
         for point in series
         if point.cases_confirmed is not None

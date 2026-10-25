@@ -407,3 +407,55 @@ class TestAsOfCutoff:
         )
         assert isinstance(result, PrevalenceEstimate)
         assert result.method is PrevalenceMethod.RECENT_WINDOW
+
+
+def test_a_flat_case_total_with_rising_deaths_is_not_no_transmission() -> None:
+    """WHO's MERS bulletins restate deaths more often than the case total.
+
+    Read literally the case total says "no new cases", which is the one thing
+    a rising death count rules out. The series' own fatality ratio converts
+    the deaths back into cases.
+    """
+    from datetime import UTC, datetime
+
+    from endemica.epidemiology import prevalence as prev
+
+    earlier = prev.ReportedCount(
+        published_at=datetime(2026, 1, 1, tzinfo=UTC), cases_confirmed=2627, deaths=946
+    )
+    later = prev.ReportedCount(
+        published_at=datetime(2026, 2, 10, tzinfo=UTC), cases_confirmed=2627, deaths=965
+    )
+    outcome = prev.prevalence_from_series(
+        [earlier, later],
+        population=36_000_000,
+        infectious_period_days=7.0,
+        as_of=datetime(2026, 2, 20, tzinfo=UTC),
+    )
+    assert isinstance(outcome, prev.PrevalenceEstimate)
+    assert outcome.method is prev.PrevalenceMethod.DEATH_DIFFERENCE
+    assert outcome.central > 0
+    assert "965" in " ".join(outcome.caveats)
+
+
+def test_flat_cases_and_flat_deaths_still_refuse() -> None:
+    from datetime import UTC, datetime
+
+    from endemica.epidemiology import prevalence as prev
+
+    points = [
+        prev.ReportedCount(
+            published_at=datetime(2026, 1, 1, tzinfo=UTC), cases_confirmed=2627, deaths=946
+        ),
+        prev.ReportedCount(
+            published_at=datetime(2026, 2, 10, tzinfo=UTC), cases_confirmed=2627, deaths=946
+        ),
+    ]
+    outcome = prev.prevalence_from_series(
+        points,
+        population=36_000_000,
+        infectious_period_days=7.0,
+        as_of=datetime(2026, 2, 20, tzinfo=UTC),
+    )
+    assert isinstance(outcome, prev.PrevalenceUnavailable)
+    assert outcome.reason == "no_new_cases"

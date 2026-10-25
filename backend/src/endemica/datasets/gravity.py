@@ -35,21 +35,28 @@ SPECIFICATION = (
 # +0.06. That describes the pairs it was fitted on well and is useless off
 # them: where there is no direct route log10(1 + 0) is zero, so the one
 # feature carrying the signal is constant and every destination comes back
-# with almost the same flow. Dropping the two topology terms forces distance
-# and population to do the work they are meant to do: distance goes to -0.63
-# and each population to +0.35. The held-out r2 falls from 0.70 to 0.25,
-# which is the honest cost of predicting without the variable that was doing
-# the explaining, and the wider residual spread is carried into the
-# uncertainty band rather than hidden.
+# with almost the same flow. Ebola showed this plainly -- the model gave
+# Uganda, which borders the outbreak, 133 passengers a day from Kinshasa and
+# Japan 114, and every unaffected country scored within a tenth of 2.7.
+#
+# Here the continuous route count is replaced by a binary marker for the
+# regime. "This pair has no scheduled direct route" is known before any flow
+# is predicted and it shifts the level rather than explaining it away:
+# distance and population keep coefficients of the size a gravity model
+# should have (-0.36 and about +0.32), the marker measures how much lower
+# such a pair sits (x0.31), and held-out r2 rises to 0.35 from the 0.28 of
+# the same model without it. The residual spread that remains, wider than
+# the full model's, is carried into the uncertainty band rather than hidden.
 UNCONNECTED_FEATURE_NAMES: tuple[str, ...] = (
     "log10_pop_origin",
     "log10_pop_dest",
     "log10_distance_km",
+    "no_direct_route",
 )
 
 UNCONNECTED_SPECIFICATION = (
     "log10(passengers_per_day) = b0 + b1*log10(pop_origin) + b2*log10(pop_dest) "
-    "+ b3*log10(distance_km)"
+    "+ b3*log10(distance_km) + b4*[no scheduled direct route]"
 )
 
 MIN_TRAINING_ROWS = 100
@@ -89,6 +96,7 @@ class PairFeatures:
     def vector_for(self, names: Sequence[str]) -> list[float]:
         """The feature vector a named specification asks for, in its order."""
         values = dict(zip(FEATURE_NAMES, self.to_vector(), strict=True))
+        values["no_direct_route"] = 1.0 if self.route_count == 0 else 0.0
         return [values[name] for name in names]
 
 
@@ -130,12 +138,28 @@ class GravityFit:
     specification: str = SPECIFICATION
     excluded_rows: int = 0
     notes: dict[str, object] = field(default_factory=dict)
+    unconnected: GravityFit | None = None
+    """The pop-and-distance fit used where there is no scheduled direct route."""
+
+    def for_pair(self, features: PairFeatures) -> GravityFit:
+        """The fit whose specification is valid for this pair.
+
+        A pair with no direct route sets the dominant feature of the full
+        specification to zero, so that model answers almost the same number
+        for every destination. Such a pair is served by the reduced fit
+        instead, where distance and population carry the signal.
+        """
+        if features.route_count > 0 or self.unconnected is None:
+            return self
+        return self.unconnected
 
     def predict_log10(self, features: PairFeatures) -> float:
-        vector = features.to_vector()
-        total = self.intercept
-        for name, value in zip(self.feature_names, vector, strict=True):
-            total += self.coefficients[name] * value
+        fit = self.for_pair(features)
+        total = fit.intercept
+        for name, value in zip(
+            fit.feature_names, features.vector_for(fit.feature_names), strict=True
+        ):
+            total += fit.coefficients[name] * value
         return total
 
     def predict_passengers_per_day(self, features: PairFeatures) -> float:
@@ -146,7 +170,7 @@ class GravityFit:
         the mean is larger by ``10 ** (0.5 * sigma^2 * ln(10))``.
         """
         median = 10.0 ** self.predict_log10(features)
-        sigma = self.residual_sigma_log10
+        sigma = self.for_pair(features).residual_sigma_log10
         correction = 10.0 ** (0.5 * sigma * sigma * math.log(10.0))
         return float(median * correction)
 
@@ -155,6 +179,14 @@ class GravityFit:
         return self.uncertainty_factor_for(has_direct_routes=True)
 
     def uncertainty_factor_for(self, *, has_direct_routes: bool) -> float:
+        if not has_direct_routes and self.unconnected is not None:
+            # The reduced fit's own held-out spread, which is wider than the
+            # full model's because it predicts without the variable that was
+            # doing the explaining. That is a measured number, so it replaces
+            # the flat extrapolation penalty this branch used to apply.
+            return float(
+                min(10.0 ** (2.0 * self.unconnected.residual_sigma_log10), MAX_UNCERTAINTY_FACTOR)
+            )
         sigma = self.residual_sigma_log10
         strata = self.notes.get("test_metrics_by_stratum")
         label = "with_direct_routes" if has_direct_routes else "without_direct_routes"
@@ -258,9 +290,48 @@ def fit_gravity_model(
                 **_metrics(target[test_index][mask], test_pred[mask]).as_dict(),
             }
 
+    # The same rows and the same split, fitted without the two topology
+    # features, for the pairs where those features are identically zero.
+    reduced_design = np.array(
+        [[1.0, *f.vector_for(UNCONNECTED_FEATURE_NAMES)] for f, _ in usable], dtype=float
+    )
+    reduced_solution, *_ = np.linalg.lstsq(
+        reduced_design[train_index], target[train_index], rcond=None
+    )
+    reduced_test_pred = reduced_design[test_index] @ reduced_solution
+    reduced_test_metrics = _metrics(target[test_index], reduced_test_pred)
+    reduced_train_metrics = _metrics(
+        target[train_index], reduced_design[train_index] @ reduced_solution
+    )
+    reduced_residual = target[test_index] - reduced_test_pred
+    reduced_sigma = float(np.std(reduced_residual, ddof=1)) if n_test > 1 else 0.0
+
+    unconnected = GravityFit(
+        intercept=float(reduced_solution[0]),
+        coefficients=dict(
+            zip(
+                UNCONNECTED_FEATURE_NAMES,
+                (float(c) for c in reduced_solution[1:]),
+                strict=True,
+            )
+        ),
+        n_train=len(train_index),
+        n_test=n_test,
+        random_seed=seed,
+        residual_sigma_log10=reduced_sigma,
+        test_metrics=reduced_test_metrics,
+        train_metrics=reduced_train_metrics,
+        training_source=training_source,
+        training_period=training_period,
+        feature_names=UNCONNECTED_FEATURE_NAMES,
+        specification=UNCONNECTED_SPECIFICATION,
+        excluded_rows=excluded,
+    )
+
     fit = GravityFit(
         intercept=float(solution[0]),
         coefficients=dict(zip(FEATURE_NAMES, (float(c) for c in solution[1:]), strict=True)),
+        unconnected=unconnected,
         n_train=len(train_index),
         n_test=n_test,
         random_seed=seed,

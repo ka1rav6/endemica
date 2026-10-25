@@ -70,7 +70,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime
 from enum import StrEnum
 
@@ -112,6 +112,9 @@ class PrevalenceMethod(StrEnum):
 
     RECENT_WINDOW = "recent_window"
     """Fallback: a single cumulative count apportioned over the outbreak's age."""
+
+    DEATH_DIFFERENCE = "death_difference"
+    """Fallback: the change in deaths, converted by the series' own fatality ratio."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -175,11 +178,15 @@ class ReportedCount:
             grounding belongs here.
         outbreak_started_on: The day the source says the outbreak was declared
             or began. ``None`` when the text does not say.
+        deaths: Cumulative deaths from the same report, when the source gives
+            them. Used only when the case total is flat and the death total is
+            not, which is how some sources report a long-running outbreak.
     """
 
     published_at: datetime
     cases_confirmed: int
     outbreak_started_on: date | None = None
+    deaths: int | None = None
 
 
 def _validate_underreporting(band: tuple[float, float, float]) -> None:
@@ -560,7 +567,7 @@ def prevalence_from_series(
         None,
     )
     if earlier is not None:
-        return estimate_from_incidence(
+        outcome = estimate_from_incidence(
             earlier.cases_confirmed,
             earlier.published_at,
             later.cases_confirmed,
@@ -571,6 +578,18 @@ def prevalence_from_series(
             as_of=as_of,
             max_report_age_days=max_report_age_days,
         )
+        if isinstance(outcome, PrevalenceUnavailable) and outcome.reason == "no_new_cases":
+            return _incidence_from_deaths(
+                earlier,
+                later,
+                population=population,
+                infectious_period_days=infectious_period_days,
+                underreporting=underreporting,
+                as_of=as_of,
+                max_report_age_days=max_report_age_days,
+                refusal=outcome,
+            )
+        return outcome
 
     age = _age_from_start(later.published_at, later.outbreak_started_on)
     return estimate_from_single_report(
@@ -582,6 +601,74 @@ def prevalence_from_series(
         underreporting=underreporting,
         as_of=as_of,
         max_report_age_days=max_report_age_days,
+    )
+
+
+def _incidence_from_deaths(
+    earlier: ReportedCount,
+    later: ReportedCount,
+    *,
+    population: int,
+    infectious_period_days: float,
+    underreporting: tuple[float, float, float],
+    as_of: datetime,
+    max_report_age_days: float,
+    refusal: PrevalenceUnavailable,
+) -> PrevalenceOutcome:
+    """Recover incidence from the death toll when the case total did not move.
+
+    Some sources keep a running death count current while restating the
+    cumulative case figure only occasionally -- WHO's MERS bulletins do this,
+    and Saudi Arabia's October 2026 report raised deaths from 946 to 965 while
+    leaving the case total at the figure published seventeen months earlier.
+    Read literally that is "no new cases", which is the one thing the deaths
+    rule out.
+
+    The conversion uses the case fatality ratio of this same series,
+    ``deaths / cases`` at the later report, so no external constant enters and
+    a source that is internally consistent stays internally consistent. The
+    result is an estimate built on a ratio rather than a count, so it is
+    returned with that stated in its caveats; where the ratio cannot be formed
+    the original refusal stands.
+    """
+    if earlier.deaths is None or later.deaths is None:
+        return refusal
+    new_deaths = later.deaths - earlier.deaths
+    if new_deaths <= 0:
+        return refusal
+    if later.cases_confirmed <= 0 or later.deaths <= 0:
+        return refusal
+    fatality_ratio = later.deaths / later.cases_confirmed
+    if not 0.0 < fatality_ratio <= 1.0:
+        return refusal
+    implied_cases = new_deaths / fatality_ratio
+    outcome = estimate_from_incidence(
+        earlier.cases_confirmed,
+        earlier.published_at,
+        earlier.cases_confirmed + round(implied_cases),
+        later.published_at,
+        population=population,
+        infectious_period_days=infectious_period_days,
+        underreporting=underreporting,
+        as_of=as_of,
+        max_report_age_days=max_report_age_days,
+    )
+    if not isinstance(outcome, PrevalenceEstimate):
+        return outcome
+    return replace(
+        outcome,
+        method=PrevalenceMethod.DEATH_DIFFERENCE,
+        caveats=(
+            f"The case total did not move between {earlier.published_at.date()} and "
+            f"{later.published_at.date()}, but deaths rose from {earlier.deaths} to "
+            f"{later.deaths}. Incidence was recovered from those {new_deaths} deaths "
+            f"using this series' own case fatality ratio of {fatality_ratio:.1%}, "
+            f"implying about {round(implied_cases)} cases.",
+            "A ratio applied to a death count is weaker evidence than a case count, "
+            "and deaths lag infection, so this estimate is both less certain and "
+            "later than a case-based one.",
+            *outcome.caveats[1:],
+        ),
     )
 
 

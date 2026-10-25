@@ -281,7 +281,22 @@ def build_processed_tables(
                     "residual_sigma_log10": gravity.residual_sigma_log10,
                     "uncertainty_factor": gravity.uncertainty_factor,
                     "test_metrics": gravity.test_metrics.as_dict(),
-                    "notes": gravity.notes,
+                    "notes": {
+                        **gravity.notes,
+                        "unconnected_fit": (
+                            {
+                                "specification": gravity.unconnected.specification,
+                                "feature_names": list(gravity.unconnected.feature_names),
+                                "intercept": gravity.unconnected.intercept,
+                                "coefficients": gravity.unconnected.coefficients,
+                                "residual_sigma_log10": (gravity.unconnected.residual_sigma_log10),
+                                "test_metrics": gravity.unconnected.test_metrics.as_dict(),
+                                "used_for": "pairs with no scheduled direct route",
+                            }
+                            if gravity.unconnected is not None
+                            else None
+                        ),
+                    },
                 },
                 indent=2,
             ),

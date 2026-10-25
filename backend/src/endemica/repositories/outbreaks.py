@@ -433,11 +433,25 @@ def _starts_new_episode(
     Without this, a country's current outbreak inherits the peak of a far
     larger one years earlier and reads as having no new cases at all.
     """
+    if point.cases_confirmed is None:
+        # A bulletin that does not restate the cumulative total carries no
+        # evidence about episode boundaries, and it has no total to start a
+        # new episode from. Cutting here would strand the series on a point
+        # with no counts at all: Saudi Arabia's MERS reporting did exactly
+        # that, where the October 2026 bulletin restated deaths but not
+        # cases, 521 days after the previous one, and the gap rule below
+        # discarded every counted report before it.
+        return False
+    if best_cases is not None and point.cases_confirmed >= best_cases * _NEW_EPISODE_RATIO:
+        # The total did not fall, so this is the same accounting series no
+        # matter how long the silence was. A source does not restate a
+        # running cumulative figure for a different outbreak.
+        return False
     if previous is not None:
         gap = (point.published_at - previous.published_at).days
         if gap > _NEW_EPISODE_GAP_DAYS:
             return True
-    if best_cases is None or point.cases_confirmed is None:
+    if best_cases is None:
         return False
     return point.cases_confirmed < best_cases * _NEW_EPISODE_RATIO
 
